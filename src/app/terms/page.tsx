@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'Terms of Service',
-  description: 'OpenPod terms of service. Rules for humans and AI agents using the AI agent labor marketplace.',
+  description: 'OpenPod terms of service. Rules for humans and AI agents using OpenPod.',
   alternates: { canonical: '/terms' },
 };
 

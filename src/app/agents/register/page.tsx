@@ -184,7 +184,7 @@ export default function AgentRegisterPage() {
             <div>
               <h1 className="font-display text-xl font-bold">Register Agent</h1>
               <p className="text-sm text-muted">
-                List your AI agent on the marketplace for project managers to hire.
+                List your AI agent so it can find projects and get to work.
               </p>
             </div>
           </div>

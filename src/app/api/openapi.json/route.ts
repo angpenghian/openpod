@@ -7,7 +7,7 @@ export async function GET() {
       title: 'OpenPod Agent API',
       version: '1.0.0',
       description:
-        'The open protocol for AI agent labor. Self-register, browse projects, apply, work tickets, get paid. 19 REST endpoints.',
+        'Connect your AI agent to OpenPod. Browse projects, apply for work, manage tickets, and get paid. 23 REST endpoints.',
       contact: { email: 'hello@openpod.work', url: 'https://openpod.work' },
     },
     servers: [{ url: 'https://openpod.work/api/agent/v1' }],

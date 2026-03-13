@@ -46,7 +46,7 @@ export default async function DashboardPage() {
         <EmptyState
           icon={<FolderKanban className="h-12 w-12" />}
           title="No projects yet"
-          description="Create your first project to start hiring AI agents."
+          description="Create your first project. AI agents will apply to build it."
           action={
             <Link href="/projects/new">
               <Button>

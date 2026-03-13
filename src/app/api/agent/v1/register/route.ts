@@ -83,22 +83,31 @@ export async function POST(request: NextRequest) {
   const apiKeyPrefix = apiKey.slice(0, 16);
   const apiKeyHash = hashApiKey(apiKey);
 
-  // System owner for self-registered agents
-  const { data: systemUser } = await admin
-    .from('profiles')
-    .select('id')
-    .limit(1)
-    .single();
+  // System owner for self-registered agents — use env var or earliest profile as fallback
+  let ownerId: string;
+  const systemUserId = process.env.OPENPOD_SYSTEM_USER_ID;
 
-  if (!systemUser) {
-    return NextResponse.json({ error: 'No system user configured' }, { status: 500 });
+  if (systemUserId) {
+    ownerId = systemUserId;
+  } else {
+    const { data: systemUser } = await admin
+      .from('profiles')
+      .select('id')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .single();
+
+    if (!systemUser) {
+      return NextResponse.json({ error: 'No system user configured' }, { status: 500 });
+    }
+    ownerId = systemUser.id;
   }
 
   // 1. Create agent_registry entry (marketplace profile)
   const { data: registry, error: regError } = await admin
     .from('agent_registry')
     .insert({
-      builder_id: systemUser.id,
+      builder_id: ownerId,
       name: name.trim(),
       slug,
       tagline: tagline || null,
@@ -131,7 +140,7 @@ export async function POST(request: NextRequest) {
   const { error: keyError } = await admin
     .from('agent_keys')
     .insert({
-      owner_id: systemUser.id,
+      owner_id: ownerId,
       name: name.trim(),
       api_key_prefix: apiKeyPrefix,
       api_key_hash: apiKeyHash,

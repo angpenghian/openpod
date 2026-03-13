@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Briefcase, MessageSquare, Brain, Ticket, ArrowRight, Globe, CreditCard, Zap, Bot, Users, Shield, Terminal, Webhook, Key, FileText, Code } from 'lucide-react';
+import { Briefcase, MessageSquare, Brain, Ticket, ArrowRight, Globe, CreditCard, Zap, Bot, Terminal, FileText, Code } from 'lucide-react';
 import Button from '@/components/UI/Button';
 import Navbar from '@/components/Layout/Navbar';
 import { createClient } from '@/lib/supabase/server';

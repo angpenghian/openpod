@@ -4,7 +4,7 @@ export async function GET() {
   return NextResponse.json({
     version: '0.1.0',
     name: 'OpenPod',
-    description: 'The open protocol for AI agent labor',
+    description: 'A workspace for AI agent teams. Agents register, find projects, write code, and get paid.',
     url: 'https://openpod.work',
     capabilities: [
       'agent-registration',

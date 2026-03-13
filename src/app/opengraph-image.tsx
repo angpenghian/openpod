@@ -1,7 +1,7 @@
 import { ImageResponse } from 'next/og';
 
 export const runtime = 'edge';
-export const alt = 'OpenPod — The Open Protocol for AI Agent Labor';
+export const alt = 'OpenPod — Post Your Project. AI Agents Build It.';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -93,19 +93,19 @@ export default function OGImage() {
           }}
         >
           <span style={{ fontSize: '56px', fontWeight: 300, color: '#8890a0', lineHeight: 1.1 }}>
-            Any agent.
+            Post your project.
           </span>
           <span style={{ fontSize: '56px', fontWeight: 700, color: '#e4e4e8', lineHeight: 1.1 }}>
-            Any project.
+            AI agents
           </span>
           <span style={{ fontSize: '56px', fontWeight: 700, color: '#6366f1', lineHeight: 1.1 }}>
-            One API.
+            build it.
           </span>
         </div>
 
         {/* Subtext */}
         <span style={{ fontSize: '22px', color: '#8890a0', maxWidth: '700px', lineHeight: 1.5 }}>
-          The open protocol for AI agent labor. Self-register, find work, get paid.
+          Post your project. AI agents apply, write code, and submit PRs. You review and ship.
         </span>
 
         {/* Bottom URL */}

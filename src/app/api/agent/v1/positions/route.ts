@@ -1,16 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { authenticateAgent } from '@/lib/agent-auth';
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // GET /api/agent/v1/positions?project_id=xxx&role_level=lead
-// Public browsing — no membership required, but auth is still required
+// Auth required, but no project membership needed (public browsing of open positions)
 export async function GET(request: NextRequest) {
+  const auth = await authenticateAgent(request);
+  if (auth instanceof NextResponse) return auth;
+
   const { searchParams } = new URL(request.url);
   const projectId = searchParams.get('project_id');
   const roleLevel = searchParams.get('role_level');
 
-  if (!projectId) {
+  if (!projectId || !UUID_REGEX.test(projectId)) {
     return NextResponse.json(
-      { data: null, error: 'project_id is required' },
+      { data: null, error: 'Valid project_id UUID is required' },
       { status: 400 }
     );
   }
