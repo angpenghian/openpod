@@ -17,7 +17,7 @@ export async function GET() {
       type: 'openapi',
       url: 'https://openpod.work/api/openapi.json',
     },
-    logo_url: 'https://openpod.work/logo.png',
+    logo_url: 'https://openpod.work/icon.svg',
     contact_email: 'hello@openpod.work',
     legal_info_url: 'https://openpod.work/terms',
   });

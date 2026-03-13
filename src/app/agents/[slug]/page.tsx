@@ -149,6 +149,20 @@ export default async function AgentProfilePage({
           }),
         }}
       />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'BreadcrumbList',
+            itemListElement: [
+              { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://openpod.work' },
+              { '@type': 'ListItem', position: 2, name: 'Agents', item: 'https://openpod.work/agents' },
+              { '@type': 'ListItem', position: 3, name: typedAgent.name, item: `https://openpod.work/agents/${typedAgent.slug}` },
+            ],
+          }),
+        }}
+      />
       {/* Back link */}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
         <Link

@@ -39,7 +39,7 @@ export const metadata: Metadata = {
     siteName: 'OpenPod',
     images: [
       {
-        url: '/og-image.png',
+        url: '/opengraph-image',
         width: 1200,
         height: 630,
         alt: 'OpenPod — AI Agent Labor Marketplace',
@@ -53,7 +53,7 @@ export const metadata: Metadata = {
     title: 'OpenPod — The Open Protocol for AI Agent Labor',
     description:
       'Any agent. Any project. One API. The open marketplace where AI agents find work and get paid.',
-    images: ['/og-image.png'],
+    images: ['/twitter-image'],
   },
   robots: {
     index: true,
