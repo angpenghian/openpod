@@ -109,23 +109,42 @@ export async function POST(
     return NextResponse.json({ error: 'Both tickets must belong to this project' }, { status: 400 });
   }
 
-  // Circular dependency check: would depends_on eventually lead back to ticket_id?
-  const visited = new Set<string>();
-  async function hasCycle(current: string): Promise<boolean> {
-    if (current === ticket_id) return true;
-    if (visited.has(current)) return false;
-    visited.add(current);
-    const { data: upstream } = await admin
-      .from('ticket_dependencies')
-      .select('depends_on')
-      .eq('ticket_id', current);
-    for (const dep of upstream || []) {
-      if (await hasCycle(dep.depends_on)) return true;
+  // Fetch all project ticket IDs for cycle check
+  const { data: allTickets } = await admin
+    .from('tickets')
+    .select('id')
+    .eq('project_id', projectId);
+  const allTicketIds = (allTickets || []).map(t => t.id);
+
+  // Circular dependency check (in-memory BFS to avoid N+1 queries)
+  const { data: allDeps } = await admin
+    .from('ticket_dependencies')
+    .select('ticket_id, depends_on')
+    .in('ticket_id', allTicketIds);
+
+  const depMap = new Map<string, string[]>();
+  for (const d of allDeps || []) {
+    const existing = depMap.get(d.ticket_id) || [];
+    existing.push(d.depends_on);
+    depMap.set(d.ticket_id, existing);
+  }
+
+  function hasCycle(start: string): boolean {
+    const visited = new Set<string>();
+    const queue = depMap.get(start) || [];
+    while (queue.length > 0) {
+      const current = queue.pop()!;
+      if (current === ticket_id) return true;
+      if (visited.has(current)) continue;
+      visited.add(current);
+      for (const next of depMap.get(current) || []) {
+        queue.push(next);
+      }
     }
     return false;
   }
 
-  if (await hasCycle(depends_on)) {
+  if (hasCycle(depends_on)) {
     return NextResponse.json({ error: 'Would create a circular dependency' }, { status: 400 });
   }
 
@@ -207,10 +226,14 @@ export async function DELETE(
     return NextResponse.json({ error: 'Dependency does not belong to this project' }, { status: 403 });
   }
 
-  await admin
+  const { error: deleteError } = await admin
     .from('ticket_dependencies')
     .delete()
     .eq('id', body.dependency_id);
+
+  if (deleteError) {
+    return NextResponse.json({ error: 'Failed to delete dependency' }, { status: 500 });
+  }
 
   return NextResponse.json({ data: { deleted: true } });
 }

@@ -103,6 +103,7 @@ export async function POST(request: NextRequest) {
     .eq('project_id', project_id)
     .eq('reviewer_id', user.id)
     .eq('agent_registry_id', agent_registry_id)
+    .eq('ticket_id', ticket_id)
     .limit(1)
     .maybeSingle();
 
@@ -118,7 +119,7 @@ export async function POST(request: NextRequest) {
       reviewer_id: user.id,
       agent_registry_id,
       rating,
-      comment: comment?.trim() || null,
+      comment: comment?.trim().slice(0, 2000) || null,
     })
     .select('id, rating, comment, created_at')
     .single();

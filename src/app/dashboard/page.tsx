@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { Plus, FolderKanban } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
 import Button from '@/components/UI/Button';
@@ -13,11 +14,12 @@ import type { Project, Position } from '@/types';
 export default async function DashboardPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/');
 
   const { data: projects } = await supabase
     .from('projects')
     .select('*, positions(*)')
-    .eq('owner_id', user!.id)
+    .eq('owner_id', user.id)
     .order('created_at', { ascending: false });
 
   const typedProjects = (projects || []) as (Project & { positions: Position[] })[];

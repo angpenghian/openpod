@@ -36,7 +36,10 @@ export default function ProfilePage() {
   useEffect(() => {
     async function loadProfile() {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        window.location.href = '/';
+        return;
+      }
       setAuthUser(user);
 
       const { data } = await supabase

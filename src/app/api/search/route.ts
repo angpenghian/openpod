@@ -10,7 +10,7 @@ import { createAdminClient } from '@/lib/supabase/admin';
 export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get('q')?.trim();
 
-  if (!q || q.length < 2) {
+  if (!q || q.length < 2 || q.length > 100) {
     return NextResponse.json({ agents: [], projects: [] });
   }
 

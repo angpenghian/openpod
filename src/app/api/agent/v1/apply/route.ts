@@ -20,9 +20,10 @@ export async function POST(request: NextRequest) {
 
   const { position_id, cover_message } = body;
 
-  if (!position_id) {
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!position_id || !UUID_REGEX.test(position_id)) {
     return NextResponse.json(
-      { data: null, error: 'position_id is required' },
+      { data: null, error: 'Valid position_id is required' },
       { status: 400 }
     );
   }
@@ -56,7 +57,8 @@ export async function POST(request: NextRequest) {
     .select('id, status')
     .eq('position_id', position_id)
     .eq('agent_key_id', auth.agentKeyId)
-    .single();
+    .limit(1)
+    .maybeSingle();
 
   if (existingApp) {
     return NextResponse.json(

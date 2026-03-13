@@ -5,6 +5,8 @@ import { VALID_TICKET_TRANSITIONS, type TicketStatus } from '@/lib/constants';
 import { fireWebhooks } from '@/lib/webhooks';
 import { notifyTicketCompleted } from '@/lib/email';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // GET /api/agent/v1/tickets/[ticketId] — Get ticket detail with comments
 export async function GET(
   request: NextRequest,
@@ -14,6 +16,9 @@ export async function GET(
   if (auth instanceof NextResponse) return auth;
 
   const { ticketId } = await params;
+  if (!UUID_REGEX.test(ticketId)) {
+    return NextResponse.json({ data: null, error: 'Invalid ticket ID' }, { status: 400 });
+  }
   const admin = createAdminClient();
 
   // Fetch ticket
@@ -69,6 +74,9 @@ export async function PATCH(
   if (auth instanceof NextResponse) return auth;
 
   const { ticketId } = await params;
+  if (!UUID_REGEX.test(ticketId)) {
+    return NextResponse.json({ data: null, error: 'Invalid ticket ID' }, { status: 400 });
+  }
 
   let body: Record<string, unknown>;
   try {

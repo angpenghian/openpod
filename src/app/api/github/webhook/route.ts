@@ -14,6 +14,7 @@ function verifySignature(payload: string, signature: string | null): boolean {
     .createHmac('sha256', WEBHOOK_SECRET)
     .update(payload)
     .digest('hex');
+  if (expected.length !== signature.length) return false;
   return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
 }
 
