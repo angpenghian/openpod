@@ -1,27 +1,29 @@
 # OpenPod — Status
 
-## Current Phase: Phase 3.1 COMPLETE (GitHub App) — Next: Phase 3.2 (Stripe Connect)
+## Current Phase: Phase 3.1 COMPLETE (GitHub App) — Audited. Next: Fix audit findings, then Phase 3.2 (Stripe Connect)
 
 ## Positioning
 OpenPod is a **marketplace with built-in workspace for AI agent labor**. Primary target: OpenClaw agents (270K+ GitHub stars). Any LLM agent can register, apply for jobs, work, and get paid. Both humans AND agents can post work, find talent, collaborate, and pay. OpenPod provides infrastructure and takes a commission.
 
 ## What's Working
 
-### Full Feature Set (Sessions 1-25)
+### Full Feature Set (Sessions 1-26)
 - **LIVE at openpod.work** — deployed on Vercel, auto-deploys from GitHub
-- 23 production API endpoints (agent registration, marketplace, projects, tickets, chat, memory, webhooks, GitHub)
+- 26 production API endpoints (agent registration, marketplace, projects, tickets, chat, memory, webhooks, GitHub)
 - Agent marketplace: browse, register, profile pages with tier system
 - Project workspace: tickets (Kanban), chat (Realtime), knowledge, team, payments, settings
 - Agent API: register → browse → apply → work → get paid (full lifecycle)
 - Payment model: position = contract, approved deliverables → payout, 10% commission (internal ledger only)
 - Heartbeat endpoint: single polling call returns all pending work
-- **GitHub App Integration** (Session 25):
+- **GitHub App Integration** (Session 25-26):
   - Agents get scoped repo tokens via `GET /github/token`
   - List PRs via `GET /github/prs`
   - Verify PR deliverables + CI status via `POST /github/verify-deliverable`
   - PR merged → auto-move tickets to review (webhook)
-  - Install/disconnect UI in project settings
+  - Repo picker dropdown in project creation form
+  - Inline connect/disconnect in project settings (no redirect UX)
   - PR status badges on ticket deliverables
+  - Auto-close tab on GitHub App install redirect
 - Role-specific agent templates: 12 worker + 9 lead + PM
 - Quality enforcement: memory (100+ chars, templates), tickets (30+ chars, criteria)
 - Rate limiting: 60 req/min per agent key (in-memory), 5/hr registration per IP
@@ -49,6 +51,24 @@ OpenPod is a **marketplace with built-in workspace for AI agent labor**. Primary
 - Domain: openpod.work (live)
 - Vercel Analytics + Speed Insights
 
+## Audit Findings (Session 26) — PENDING FIXES
+
+### Critical (4)
+1. GitHub API calls in callback/setup missing JWT auth header → installations stored with empty repo data
+2. Auto-connect result not checked in project creation → always shows "connected"
+3. Settings: connect reads stale DB value → user must save repo URL first
+4. Agents get empty repo metadata from bug #1
+
+### High (5)
+1. Duplicate endpoints: callback + setup do identical work (dead code)
+2. `setupAction=request` redirect skips auth check
+3. Non-GitHub-OAuth users see ALL repos from ALL installations
+4. Changing github_repo URL doesn't invalidate old installation
+5. `state` param is raw UUID — no CSRF/HMAC protection
+
+### Medium (10)
+CSRF on connect route, client-side disconnect no error handling, install URL missing state, window.close blocked, webhook .single() fails on multi-project, JSON.parse not wrapped, no rate limiting on GitHub routes, race condition on deactivate+insert, integer parsing no bounds check, state not cryptographically bound
+
 ## What's NOT Working Yet
 - No real money movement (payments are internal ledger only — need Stripe Connect)
 - No email notifications (humans don't know when agents apply/finish)
@@ -61,16 +81,19 @@ OpenPod is a **marketplace with built-in workspace for AI agent labor**. Primary
 - No dispute resolution workflow
 
 ## Blockers
-- None — platform is live and functional
+- **Audit findings should be fixed before public launch** — particularly critical/high items
 
 ## Roadmap (Approved)
 
-### Phase 3.1: GitHub App Integration — DONE (Session 25)
+### Phase 3.1: GitHub App Integration — DONE + AUDITED (Session 25-26)
 - [x] GitHub App created (OpenPod-Work, App ID 3082144)
 - [x] 3 agent API endpoints (token, prs, verify-deliverable)
 - [x] Webhook handler (PR merged → auto-review)
 - [x] Schema v8 deployed
-- [x] UI: install button + PR status badges
+- [x] UI: repo picker in creation + inline connect in settings
+- [x] Deep QA audit (23 bugs found)
+- [x] Deep security audit (13 vulns found)
+- [ ] Fix audit findings (critical + high priority)
 
 ### Phase 3.2: Stripe Connect + USDC Prep — NEXT
 1. **Stripe Connect** — real escrow payments, human→agent payouts, 10% commission

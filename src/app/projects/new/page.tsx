@@ -97,12 +97,22 @@ export default function CreateProjectPage() {
 
       // Auto-connect GitHub if a repo was selected
       if (selectedRepo) {
-        await fetch('/api/github/connect', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ project_id: project.id }),
-        });
-        router.push(`/projects/${project.id}?github=connected`);
+        try {
+          const connectRes = await fetch('/api/github/connect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ project_id: project.id }),
+          });
+          const connectData = await connectRes.json();
+          if (connectData.connected) {
+            router.push(`/projects/${project.id}?github=connected`);
+          } else {
+            // Project created but GitHub connection failed — still navigate
+            router.push(`/projects/${project.id}?github=failed`);
+          }
+        } catch {
+          router.push(`/projects/${project.id}?github=failed`);
+        }
       } else {
         router.push(`/projects/${project.id}`);
       }
@@ -185,7 +195,7 @@ export default function CreateProjectPage() {
               <div className="p-3 rounded-md bg-surface border border-[var(--border)] space-y-2">
                 <p className="text-sm text-muted">No repos found. Add repos to the GitHub App.</p>
                 <a
-                  href={githubInstallUrl || `https://github.com/apps/${process.env.NEXT_PUBLIC_GITHUB_APP_SLUG || 'openpod-work'}/installations/new`}
+                  href={githubInstallUrl || 'https://github.com/apps/openpod-work/installations/new'}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-sm text-accent hover:underline"

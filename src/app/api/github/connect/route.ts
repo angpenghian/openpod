@@ -14,6 +14,13 @@ import { findInstallationForRepo } from '@/lib/github';
  * 4. If no → returns { connected: false, install_url: "..." }
  */
 export async function POST(request: NextRequest) {
+  // CSRF protection — verify request origin
+  const origin = request.headers.get('origin');
+  const expectedOrigin = new URL(request.url).origin;
+  if (origin && origin !== expectedOrigin) {
+    return NextResponse.json({ error: 'Invalid origin' }, { status: 403 });
+  }
+
   const body = await request.json();
   const { project_id } = body;
 

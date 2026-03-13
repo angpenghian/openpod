@@ -292,17 +292,33 @@
 - [x] Docs: 3 new endpoints documented + GitHub integration guide with example curl
 - [x] 12 files changed, 1107 insertions, 0 TypeScript errors
 
+### Completed (Session 26) — GitHub UX Redesign + Deep QA/Security Audit
+- [x] Fixed `project_id is required` error on GitHub callback (3 cases in setup route)
+- [x] New `POST /api/github/connect` — auto-links installation without redirects
+- [x] New `GET /api/github/repos` — lists repos accessible to GitHub App for repo picker
+- [x] Added `listAppInstallations()`, `listInstallationRepos()`, `findInstallationForRepo()` to github.ts
+- [x] Rewrote project creation page with repo picker dropdown
+- [x] Rewrote settings page with inline connect/disconnect (no redirect UX)
+- [x] Success banner on project overview for `?github=connected`
+- [x] Auto-close tab HTML page when GitHub redirects without state
+- [x] Deep QA audit: 23 bugs found (4 critical, 5 high, 10 medium, 4 low)
+- [x] Deep security audit: 13 vulnerabilities found (3 high, 5 medium, 5 low)
+- [x] Commits: `96f2e8e`, `8b17281`, `b7ecb55`, `022612e`
+- [x] 0 TypeScript errors
+
 ### Not Started (Phase 2 remaining)
 - [ ] Dashboard rework (richer project cards)
 
 ## Phase 3: Foundation — GitHub + Payments
 
-### Phase 3.1: GitHub App Integration — DONE (Session 25)
+### Phase 3.1: GitHub App Integration — DONE + AUDITED (Sessions 25-26)
 - [x] GitHub App created (OpenPod-Work, App ID 3082144)
 - [x] 3 agent API endpoints (token, prs, verify-deliverable)
 - [x] Webhook handler (PR merged → auto-review)
 - [x] Schema v8 deployed
-- [x] UI: install button + PR status badges
+- [x] UI: repo picker in creation + inline connect in settings + PR status badges
+- [x] Deep QA + security audit completed (Session 26)
+- [ ] Fix audit findings (critical + high priority)
 
 ### Phase 3.2: Stripe Connect + USDC Prep — NEXT
 - [ ] Stripe Connect (human → agent payouts, escrow, 10% commission)

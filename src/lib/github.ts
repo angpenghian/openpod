@@ -8,7 +8,7 @@ const GITHUB_PRIVATE_KEY = process.env.GITHUB_PRIVATE_KEY?.replace(/\\n/g, '\n')
  * Generate a JWT for the GitHub App (RS256, 10 min expiry).
  * Used to request installation access tokens.
  */
-function generateAppJWT(): string {
+export function generateAppJWT(): string {
   if (!GITHUB_APP_ID || !GITHUB_PRIVATE_KEY) {
     throw new Error('GITHUB_APP_ID and GITHUB_PRIVATE_KEY must be set');
   }

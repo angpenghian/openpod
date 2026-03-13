@@ -34,7 +34,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
   }
 
-  const payload = JSON.parse(body);
+  let payload;
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+
   const admin = createAdminClient();
 
   switch (event) {
@@ -53,13 +59,14 @@ export async function POST(request: NextRequest) {
       const installationId = payload.installation?.id;
       if (!installationId) break;
 
-      // Find the project linked to this installation
+      // Find the project linked to this installation (use maybeSingle to handle 0 or 1 result)
       const { data: installation } = await admin
         .from('github_installations')
         .select('project_id')
         .eq('installation_id', installationId)
         .eq('is_active', true)
-        .single();
+        .limit(1)
+        .maybeSingle();
 
       if (!installation) break;
 

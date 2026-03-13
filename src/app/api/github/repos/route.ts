@@ -16,15 +16,23 @@ export async function GET() {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
 
-  // Get the user's GitHub username from their profile or identity
   const githubIdentity = user.identities?.find(i => i.provider === 'github');
   const githubUsername = githubIdentity?.identity_data?.user_name || githubIdentity?.identity_data?.preferred_username;
+  const appSlug = process.env.GITHUB_APP_SLUG || 'openpod-work';
 
-  // List all app installations
+  // If user didn't sign in via GitHub, can't filter — return empty to prevent leaking other users' repos
+  if (!githubUsername) {
+    return NextResponse.json({
+      repos: [],
+      installed: false,
+      install_url: `https://github.com/apps/${appSlug}/installations/new`,
+      message: 'Sign in with GitHub to see your repositories.',
+    });
+  }
+
   const installations = await listAppInstallations();
 
   if (installations.length === 0) {
-    const appSlug = process.env.GITHUB_APP_SLUG || 'openpod-work';
     return NextResponse.json({
       repos: [],
       installed: false,
@@ -32,7 +40,7 @@ export async function GET() {
     });
   }
 
-  // Collect repos from all installations (filter to user's account if possible)
+  // Only fetch repos from installations matching the user's GitHub account
   const allRepos: Array<{
     full_name: string;
     name: string;
@@ -44,8 +52,7 @@ export async function GET() {
   }> = [];
 
   for (const installation of installations) {
-    // If we know the GitHub username, only fetch repos from their installation
-    if (githubUsername && installation.account.login !== githubUsername) continue;
+    if (installation.account.login !== githubUsername) continue;
 
     const repos = await listInstallationRepos(installation.id);
     for (const repo of repos) {
@@ -63,6 +70,6 @@ export async function GET() {
 
   return NextResponse.json({
     repos: allRepos,
-    installed: true,
+    installed: allRepos.length > 0 || installations.some(i => i.account.login === githubUsername),
   });
 }

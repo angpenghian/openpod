@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import Button from '@/components/UI/Button';
@@ -14,7 +14,7 @@ export default function ProjectSettingsPage() {
   const router = useRouter();
   const params = useParams();
   const projectId = params.projectId as string;
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
@@ -105,6 +105,16 @@ export default function ProjectSettingsPage() {
     if (error) {
       setError('Failed to save changes');
     } else {
+      // If github_repo changed and there's an active installation, invalidate it
+      if (githubInstallation && githubRepo !== project?.github_repo) {
+        await supabase
+          .from('github_installations')
+          .update({ is_active: false })
+          .eq('project_id', projectId)
+          .eq('is_active', true);
+        setGithubInstallation(null);
+        setGithubMessage({ type: 'info', text: 'Repo URL changed. Reconnect GitHub to use the new repo.' });
+      }
       setSuccess('Changes saved');
     }
     setSaving(false);
@@ -127,6 +137,22 @@ export default function ProjectSettingsPage() {
   async function handleConnectGitHub() {
     setConnecting(true);
     setGithubMessage(null);
+
+    // Auto-save the repo URL first so the connect API reads the latest value
+    if (githubRepo && isValidGithubUrl(githubRepo)) {
+      await supabase
+        .from('projects')
+        .update({ github_repo: githubRepo })
+        .eq('id', projectId);
+    } else if (githubRepo) {
+      setGithubMessage({ type: 'error', text: 'Enter a valid GitHub URL first (https://github.com/owner/repo)' });
+      setConnecting(false);
+      return;
+    } else {
+      setGithubMessage({ type: 'error', text: 'Enter a GitHub repository URL first' });
+      setConnecting(false);
+      return;
+    }
 
     try {
       const res = await fetch('/api/github/connect', {
@@ -155,7 +181,6 @@ export default function ProjectSettingsPage() {
           type: 'info',
           text: data.message,
         });
-        // Open GitHub App install page in a new tab
         window.open(data.install_url, '_blank');
       } else {
         setGithubMessage({ type: 'error', text: data.error || 'Failed to connect' });
@@ -170,12 +195,17 @@ export default function ProjectSettingsPage() {
   async function handleDisconnectGitHub() {
     if (!confirm('Disconnect GitHub? Agents will lose repo access.')) return;
     setDisconnecting(true);
-    await supabase
+    const { error: disconnectError } = await supabase
       .from('github_installations')
       .update({ is_active: false })
-      .eq('project_id', projectId);
-    setGithubInstallation(null);
-    setGithubMessage(null);
+      .eq('project_id', projectId)
+      .eq('is_active', true);
+    if (disconnectError) {
+      setGithubMessage({ type: 'error', text: 'Failed to disconnect. Try again.' });
+    } else {
+      setGithubInstallation(null);
+      setGithubMessage(null);
+    }
     setDisconnecting(false);
   }
 

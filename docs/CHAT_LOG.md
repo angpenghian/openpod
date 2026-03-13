@@ -1,5 +1,54 @@
 # OpenPod — Chat Log
 
+## Session 26 (2026-03-13) — GitHub UX Redesign + Deep QA/Security Audit
+
+### Context
+- Post-Session 25. GitHub App built but UX was broken — `project_id is required` error on GitHub callback.
+- User tested flows end-to-end and reported multiple issues.
+
+### What Was Fixed
+- **`project_id is required` error:** GitHub callback URL had no `state` param when user installs from GitHub directly. Added Case 3 to setup route — returns HTML page with `window.close()` + fallback link.
+- **GitHub UX redesign — no-redirect flow:**
+  - Created `POST /api/github/connect` — auto-links installation by calling `findInstallationForRepo()`. No redirects.
+  - Created `GET /api/github/repos` — lists repos accessible to GitHub App, filtered by user's GitHub identity.
+  - Added `listAppInstallations()`, `listInstallationRepos()`, `findInstallationForRepo()` to `github.ts`.
+  - Rewrote project creation page with repo picker dropdown (select from installed repos).
+  - Rewrote settings page with inline "Connect GitHub" button (no redirect to GitHub).
+  - Success banner on project overview when `?github=connected`.
+- **Setup route now handles 3 cases:**
+  1. OpenPod UI with `?project_id=xxx` → auto-connect or redirect to GitHub
+  2. GitHub redirect with `?installation_id=xxx&state=xxx` → store and redirect to project
+  3. GitHub redirect with `?installation_id=xxx` (no state) → auto-close tab HTML page
+
+### Deep QA Results (23 bugs: 4 Critical, 5 High, 10 Medium, 4 Low)
+- **CRIT:** Unauthenticated GitHub API calls in callback/setup (missing JWT header)
+- **CRIT:** Auto-connect result not checked in project creation (always shows "connected")
+- **CRIT:** Connect button reads stale DB (user must save repo URL before connecting)
+- **HIGH:** Duplicate endpoints (callback + setup do identical work)
+- **HIGH:** `setupAction=request` redirect skips auth check
+- **HIGH:** Non-GitHub-OAuth users see ALL repos from ALL installations
+- **HIGH:** Changing `github_repo` URL doesn't invalidate old installation
+- See full report in session transcript
+
+### Deep Security Results (13 vulns: 3 High, 5 Medium, 5 Low)
+- **HIGH:** Open redirect — unvalidated `state` in redirects
+- **HIGH:** Auth bypass — `setupAction=request` before auth check
+- **HIGH:** Installation spoofing — `installation_id` not verified against repo
+- **MED:** CSRF on POST `/api/github/connect`
+- **MED:** Data leakage — non-GitHub users see all repos
+- **MED:** No rate limiting on human-facing GitHub routes
+- See full report in session transcript
+
+### Files Changed
+- Modified: `src/app/api/github/setup/route.ts` (3 cases + auto-close HTML)
+- New: `src/app/api/github/connect/route.ts`, `src/app/api/github/repos/route.ts`
+- Modified: `src/lib/github.ts` (3 new functions)
+- Rewritten: `src/app/projects/new/page.tsx` (repo picker), `src/app/projects/[projectId]/settings/page.tsx` (inline connect)
+- Modified: `src/components/Project/WorkspaceLiveOverview.tsx` (success banner)
+- Commits: `96f2e8e`, `8b17281`, `b7ecb55`, `022612e`
+
+---
+
 ## Session 25 (2026-03-13) — GitHub App Integration
 
 ### Context

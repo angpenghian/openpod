@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { findInstallationForRepo } from '@/lib/github';
+import { findInstallationForRepo, generateAppJWT } from '@/lib/github';
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * GitHub App setup — handles THREE cases:
@@ -13,7 +15,7 @@ import { findInstallationForRepo } from '@/lib/github';
  *   → Store the installation linked to the project
  *
  * Case 3: Called by GitHub's post-install redirect with ?installation_id=xxx (NO state)
- *   → User installed from GitHub directly, redirect to dashboard with success message
+ *   → User installed from GitHub directly, auto-close tab
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -24,14 +26,27 @@ export async function GET(request: NextRequest) {
 
   // ── Case 2: GitHub's post-install redirect WITH project context ──
   if (installationId && state) {
-    if (setupAction === 'request') {
-      return NextResponse.redirect(new URL(`/projects/${state}/settings?github=requested`, request.url));
+    // Validate state is a UUID (prevents open redirect / injection)
+    if (!UUID_REGEX.test(state)) {
+      return NextResponse.redirect(new URL('/dashboard?error=invalid_state', request.url));
     }
 
+    // Validate installationId is a positive integer
+    const installId = parseInt(installationId, 10);
+    if (isNaN(installId) || installId <= 0) {
+      return NextResponse.redirect(new URL('/dashboard?error=invalid_installation', request.url));
+    }
+
+    // Auth check FIRST — before any redirect (fixes auth bypass on setupAction=request)
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       return NextResponse.redirect(new URL('/auth/login?error=unauthenticated', request.url));
+    }
+
+    // Now handle setupAction=request (AFTER auth check)
+    if (setupAction === 'request') {
+      return NextResponse.redirect(new URL(`/projects/${state}/settings?github=requested`, request.url));
     }
 
     const admin = createAdminClient();
@@ -64,11 +79,13 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // If couldn't parse, try to get from GitHub API
+    // If couldn't parse, fetch from GitHub API WITH JWT auth (fixes unauthenticated API call)
     if (!repoOwner || !repoName) {
       try {
-        const res = await fetch(`https://api.github.com/app/installations/${installationId}`, {
+        const jwt = generateAppJWT();
+        const res = await fetch(`https://api.github.com/app/installations/${installId}`, {
           headers: {
+            Authorization: `Bearer ${jwt}`,
             Accept: 'application/vnd.github+json',
             'X-GitHub-Api-Version': '2022-11-28',
           },
@@ -84,22 +101,25 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Deactivate any existing installation for this project
+    // Deactivate any existing installation for this project, then insert new one
     await admin
       .from('github_installations')
       .update({ is_active: false })
       .eq('project_id', state);
 
-    // Store the new installation
-    await admin
+    const { error: insertError } = await admin
       .from('github_installations')
       .insert({
         project_id: state,
-        installation_id: parseInt(installationId, 10),
+        installation_id: installId,
         repo_owner: repoOwner,
         repo_name: repoName,
         installed_by: user.id,
       });
+
+    if (insertError) {
+      return NextResponse.redirect(new URL(`/projects/${state}/settings?github=error`, request.url));
+    }
 
     return NextResponse.redirect(
       new URL(`/projects/${state}?github=connected`, request.url)
@@ -108,26 +128,40 @@ export async function GET(request: NextRequest) {
 
   // ── Case 3: GitHub redirect WITHOUT project context (installed from GitHub directly) ──
   if (installationId && !state) {
-    // User installed from GitHub's UI (opened in a new tab from project creation).
-    // Auto-close this tab so the user returns to where they left off.
+    // Handle setup_action=request in Case 3 too
+    const message = setupAction === 'request'
+      ? 'Access requested! Your org admin will need to approve the installation.'
+      : 'GitHub App installed successfully!';
+
     return new NextResponse(
       `<!DOCTYPE html>
-<html><head><title>GitHub App Installed</title></head>
+<html><head><title>OpenPod — GitHub App</title></head>
 <body style="background:#0d1117;color:#e6edf3;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
 <div style="text-align:center">
-<p style="font-size:18px">GitHub App installed successfully!</p>
+<p style="font-size:18px">${message}</p>
 <p style="color:#8b949e">This tab will close automatically...</p>
 <script>window.close();setTimeout(()=>{document.getElementById('f').style.display='block'},500)</script>
-<p id="f" style="display:none;margin-top:16px"><a href="/projects/new" style="color:#7c6aef">Return to project creation</a></p>
+<p id="f" style="display:none;margin-top:16px"><a href="/dashboard" style="color:#7c6aef">Return to OpenPod</a></p>
 </div>
 </body></html>`,
-      { headers: { 'Content-Type': 'text/html' } }
+      {
+        headers: {
+          'Content-Type': 'text/html',
+          'Content-Security-Policy': "default-src 'self'; script-src 'unsafe-inline'",
+          'X-Content-Type-Options': 'nosniff',
+        },
+      }
     );
   }
 
   // ── Case 1: Called by OpenPod UI with ?project_id=xxx ──
   if (!projectId) {
     return NextResponse.json({ error: 'project_id is required' }, { status: 400 });
+  }
+
+  // Validate projectId is a UUID
+  if (!UUID_REGEX.test(projectId)) {
+    return NextResponse.json({ error: 'Invalid project_id format' }, { status: 400 });
   }
 
   const appSlug = process.env.GITHUB_APP_SLUG;
