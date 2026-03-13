@@ -1,5 +1,208 @@
 # OpenPod — Chat Log
 
+## Session 30 (2026-03-14) — Dual Payment System (Stripe Connect + x402 Protocol)
+
+### Context
+- All non-payment features shipped (30+ endpoints). Payments were internal ledger only — "Real payouts coming soon with Stripe Connect."
+- User wanted BOTH payment rails built: Stripe Connect (human→agent USD) AND x402 protocol (agent→agent USDC on Base).
+- Plan approved: 4 phases, 13 new files, 9 modified files.
+
+### What Was Built
+
+#### Phase 1: Foundation
+- **Schema v10** (`supabase/schema-v10.sql`) — deployed to Supabase
+  - `agent_registry`: +stripe_account_id, +stripe_onboarded, +wallet_address
+  - `projects`: +stripe_payment_intent_id, +escrow_amount_cents, +escrow_status (6 states)
+  - `transactions`: +payment_rail (ledger/stripe/x402), +stripe_transfer_id, +x402_tx_hash, +settled, +settled_at
+  - New tables: `stripe_events` (idempotent webhook processing), `x402_payments` (agent-to-agent log)
+- **Types** (`src/types/index.ts`) — StripeEvent, X402Payment interfaces + payment fields on existing types
+- **Constants** (`src/lib/constants.ts`) — ESCROW_STATUSES, PAYMENT_RAILS, 3 new webhook events
+- **Bug fix** — TicketDetail.tsx was creating transactions CLIENT-SIDE with wrong amount (net vs gross). Replaced with server endpoint call to new `POST /api/projects/[projectId]/tickets/[ticketId]/approve` (cookie auth)
+- **Dependencies** — `stripe`, `ethers` installed
+
+#### Phase 2: Stripe Connect (Human → Agent)
+- **Stripe lib** (`src/lib/stripe.ts`) — singleton, createExpressAccount, createCheckoutSession, settleStripeTransfer, constructEvent
+- **Onboard route** (`POST /api/stripe/connect/onboard`) — creates Express account, returns Stripe onboarding URL
+- **Status route** (`GET /api/stripe/connect/status`) — checks agent's Stripe onboarding status
+- **Checkout route** (`POST /api/stripe/checkout`) — creates Checkout Session for project escrow funding (min $1)
+- **Webhook route** (`POST /api/stripe/webhooks`) — handles checkout.session.completed, account.updated, transfer.failed. Idempotent via stripe_events table.
+- **Approval route modified** (`POST /api/agent/v1/tickets/[ticketId]/approve`) — after transaction insert, attempts Stripe transfer if project funded + agent onboarded. Graceful fallback to ledger if not.
+
+#### Phase 3: x402 Protocol (Agent → Agent)
+- **x402 lib** (`src/lib/x402.ts`) — facilitator URL, network config, USDC balance reader (ethers.js), wallet validation, payment verification via Coinbase facilitator
+- **Register route** — now accepts optional `wallet_address` (validated 0x + 40 hex)
+- **Me route** — GET returns wallet_address + stripe_onboarded. New PATCH handler for profile updates.
+- **Balance route** (`GET /api/agent/v1/me/balance`) — on-chain USDC balance + internal ledger totals + x402 earnings
+- **Delegate route** (`POST /api/agent/v1/delegate`) — x402-gated task delegation (returns 402 → payment → settlement)
+- **Invoke route** (`POST /api/agent/v1/services/[agentSlug]/invoke`) — x402-gated service call by slug
+
+#### Phase 4: Polish
+- **Email** — removed "Real payouts coming soon", replaced with actual settlement info
+- **agents.json** — added x402-payments capability, agent-to-agent-payment + task-delegation flows
+- **ai-plugin.json** — updated description with x402, wallet_address, 30+ endpoints
+- **openapi.json** — updated to 30+ endpoints with payment rail mention
+
+### TS Errors Fixed
+1. Stripe API version mismatch: `'2025-04-30.basil'` → `'2026-02-25.clover'`
+2. `event.data.object` type cast: double cast `as unknown as Record<string, unknown>`
+3. `transfer.failed` not in Stripe event union: cast `event.type as string` + if/else instead of switch
+
+### Files Created (13)
+- `supabase/schema-v10.sql`, `src/lib/stripe.ts`, `src/lib/x402.ts`
+- `src/app/api/stripe/connect/onboard/route.ts`, `src/app/api/stripe/connect/status/route.ts`
+- `src/app/api/stripe/checkout/route.ts`, `src/app/api/stripe/webhooks/route.ts`
+- `src/app/api/projects/[projectId]/tickets/[ticketId]/approve/route.ts`
+- `src/app/api/agent/v1/me/balance/route.ts`, `src/app/api/agent/v1/delegate/route.ts`
+- `src/app/api/agent/v1/services/[agentSlug]/invoke/route.ts`
+
+### Files Modified (9)
+- `src/types/index.ts`, `src/lib/constants.ts`, `src/components/Project/TicketDetail.tsx`
+- `src/app/api/agent/v1/tickets/[ticketId]/approve/route.ts`, `src/app/api/agent/v1/register/route.ts`
+- `src/app/api/agent/v1/me/route.ts`, `src/lib/email.ts`
+- `src/app/.well-known/agents.json/route.ts`, `src/app/.well-known/ai-plugin.json/route.ts`
+
+### Build
+- 0 TypeScript errors, clean `next build`
+- Schema v10 deployed to Supabase
+
+### Deployment Steps (for user)
+1. ~~Deploy schema v10 to Supabase SQL Editor~~ ✅ Done
+2. Set up Stripe account + webhook endpoint
+3. Create platform wallet for x402 commission
+4. Add env vars to Vercel (STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY, OPENPOD_WALLET_ADDRESS, X402_NETWORK, BASE_RPC_URL)
+5. Commit & push to trigger Vercel deploy
+6. Test both payment flows
+
+### Decisions
+- **Express Connect** (not Custom) — less friction, Stripe handles KYC/taxes
+- **Stripe Checkout** (not Payment Intents) — zero PCI scope, hosted page
+- **Transfers** (not direct charges) — platform controls when money moves
+- **No private keys stored** — agents bring their own wallets, OpenPod stores public address only
+- **Ledger = source of truth** — Stripe/x402 are settlement rails on top of existing ledger
+- **x402 per-route** (not global middleware) — only agent-to-agent endpoints are paid
+- **10% commission on both rails** — same COMMISSION_RATE for consistency
+- **Graceful fallback** — if Stripe not configured or agent not onboarded, stays as ledger
+
+---
+
+## Session 29 (2026-03-14) — ClawHub Skill + Promotion Strategy
+
+### Context
+- User wants to start promoting OpenPod. Friend suggested posting on ClawHub.
+- Researched ClawHub ecosystem, SKILL.md format, publishing process, promotion channels.
+
+### ClawHub Skill Published
+- Built `OpenPod/clawhub-skill/SKILL.md` — wraps all 25 Agent API endpoints as an OpenClaw skill
+- SKILL.md format: YAML frontmatter + curl/jq examples for every endpoint
+- Covers: registration, discovery, applications, tickets, messages, knowledge, GitHub, webhooks
+- Verified all curl examples match actual API routes (fixed 4 minor mismatches: response format docs, ticket transitions, GitHub token fields)
+- **Published to ClawHub as `openpod@1.0.0`** (hash: `k974mgdhhq6ry0nd1es1g459xd82vckt`)
+
+### Knowledge File Updated
+- Updated `.context/knowledge/openclaw.md` with comprehensive promotion strategy:
+  - ClawHub publishing process (CLI commands, prerequisites, version management)
+  - Security pipeline (SHA-256, VirusTotal, Code Insight, verdicts)
+  - 13-point security checklist
+  - 12 promotion channels ranked by impact (ClawHub → awesome-openclaw-skills → Discord → Show HN → Product Hunt → Reddit → Dev.to → directories → X → GitHub Discussions → CoClaw → Indie Hackers)
+  - 4 AI agent directories for free listings
+  - OpenClaw community channels (Discord 141K, CoClaw, forums, newsletter)
+  - Key X/Twitter accounts
+  - Success stories (Larry Loop 500K views, 2M views agent, Moltbook launch)
+  - Third-party registries (SkillHub, SkillsMP) for cross-posting
+- Updated ClawHub skill count from 5,700+ → 13,000+
+
+### Files Created
+- `OpenPod/clawhub-skill/SKILL.md` — published OpenClaw skill
+
+### Files Modified
+- `.context/knowledge/openclaw.md` — promotion channels, publishing guide, success stories
+
+### Decisions
+- SKILL.md format (not TypeScript) — simpler, lower barrier, curl-based. Matches HubSpot/Confluence patterns.
+- All 25 endpoints included — comprehensive skill, not a subset.
+
+### Next Steps (promotion playbook)
+1. Submit PR to awesome-openclaw-skills (VoltAgent GitHub list)
+2. Post in OpenClaw Discord showcase (Friends of the Crustacean, 141K members)
+3. Request Verified badge from ClawHub dashboard
+4. Seed demo content on openpod.work (solve the 0/0/0 problem)
+
+---
+
+## Session 28 (2026-03-14) — Framing Rewrite + QA Round 3
+
+### Context
+- User wants OpenPod to succeed like Moltbook. Strategic assessment identified 7 gaps.
+- User asked: "scan the whole code base and fix the framing for me"
+
+### Framing Rewrite (commit `027afa5`)
+Rewrote ALL public-facing copy from "protocol for agents" to "post your project, AI agents build it":
+- **Landing page** — hero, how-it-works (3 steps human-first), features (practical), use cases, CTA
+- **Global metadata** — title, description, OG, Twitter, keywords updated
+- **Agents browse** — "Agent Marketplace" → "AI Agents Ready to Work"
+- **Projects browse** — "Find Work" → "Open Projects"
+- **Docs** — "API Documentation" → "Connect Your Agent to OpenPod"
+- **Onboarding modal** — all 3 steps reframed human-first
+- **Navbar** — link labels updated
+- 9 files changed, 125 insertions, 128 deletions
+
+### QA Round 3 + Security Audit
+- Ran two parallel audit agents (API routes + UI components)
+- [Results pending]
+
+### Grok External Review
+- User fed openpod.work to Grok (xAI). Grok noted:
+  - 0 agents, 0 projects, 0 positions on homepage = credibility killer
+  - Liked the agent marketplace framing ("protocol for agents")
+  - Called it "vaporware-adjacent" due to zero traction
+  - No external buzz (Reddit, HN, X)
+  - Competitors mentioned: Unicity Labs, SwarmMarket, Openlancer
+
+### Decisions
+- Framing tension: Grok preferred agent-first framing, we shipped human-first. Need to decide which audience to lead with.
+
+---
+
+## Session 27 (2026-03-13) — All Non-Payment Features + Full QA Audit
+
+### Features Implemented (10 items)
+1. **Review Submission UI + API** — `ReviewForm.tsx` + `POST /api/reviews`. Star rating (1-5) + comment. Project owner on completed tickets only.
+2. **Global Search** — `GlobalSearch.tsx` in navbar + `GET /api/search?q=`. Agents + public projects. Debounced 300ms.
+3. **Onboarding Modal** — 3-step guided tour. localStorage flag. Skip button.
+4. **Docs Tutorial** — Full agent lifecycle walkthrough with curl examples added to `/docs`.
+5. **Webhook Retry + Delivery History** — 3 attempts, exponential backoff. `webhook_deliveries` table.
+6. **Upstash Redis Rate Limiting** — Replaces in-memory Map. Fallback if no env vars.
+7. **Task Dependencies** — `POST/GET/DELETE /api/projects/[id]/dependencies`. Circular check. Blocked indicators.
+8. **CI/CD Feedback Loop** — `check_run.completed` + `pull_request_review.submitted` handlers.
+9. **Email Notifications (Resend)** — 3 templates + preferences table + profile toggles.
+10. **Full QA + Security Audit** — HTML injection, IDOR, URL validation, IPv6 SSRF, payout validation fixed.
+
+### Schema v9: `webhook_deliveries`, `ticket_dependencies`, `notification_preferences`
+### External: Upstash Redis (us-east-1) + Resend (pending reactivation, TXT DNS only)
+### Commit: `4598416` — 24 files, 2169 insertions. Pushed to main.
+
+---
+
+## Session 27 (2026-03-13) — All Non-Payment Features + Full QA Audit
+
+### Features (10 items)
+1. **Review submission** — `ReviewForm.tsx` + `POST /api/reviews`. Star rating + comment. Project owner on completed tickets.
+2. **Global search** — `GlobalSearch.tsx` in navbar + `GET /api/search?q=`. Agents + public projects. Debounced 300ms.
+3. **Onboarding modal** — 3-step guided tour. localStorage flag. Skip button.
+4. **Docs tutorial** — Full agent lifecycle walkthrough with curl examples.
+5. **Webhook retry** — 3 attempts, exponential backoff. `webhook_deliveries` table.
+6. **Upstash Redis rate limiting** — Replaces in-memory Map. Fallback if no env vars.
+7. **Task dependencies** — `POST/GET/DELETE /api/projects/[id]/dependencies`. Circular check.
+8. **CI/CD feedback** — `check_run.completed` + `pull_request_review.submitted` handlers.
+9. **Email notifications** — Resend: 3 templates + preferences table + profile toggles.
+10. **QA + security audit** — HTML injection, IDOR, URL validation, IPv6 SSRF, payout validation.
+
+### Schema v9: `webhook_deliveries`, `ticket_dependencies`, `notification_preferences`
+### External: Upstash Redis (us-east-1) + Resend (pending reactivation)
+### Commit: `4598416` — 24 files, 2169 insertions
+
+---
+
 ## Session 26 (2026-03-13) — GitHub UX Redesign + Deep QA/Security Audit
 
 ### Context

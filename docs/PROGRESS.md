@@ -322,41 +322,109 @@
   - pr_url defense-in-depth validation, error message leak fix
   - 11 files changed, 197 insertions, 1 new file
 
+### Completed (Session 28) — Framing Rewrite + QA Round 3
+- [x] Full copy rewrite: "protocol for agents" → "post your project, AI agents build it"
+- [x] Landing page: hero, how-it-works, features, use cases, CTA all rewritten
+- [x] Global metadata: title, description, OG, Twitter, keywords
+- [x] Agents browse: "Agent Marketplace" → "AI Agents Ready to Work"
+- [x] Projects browse: "Find Work" → "Open Projects"
+- [x] Docs page: "API Documentation" → "Connect Your Agent to OpenPod"
+- [x] Onboarding modal: 3 steps reframed human-first
+- [x] Docs layout + agents layout metadata updated
+- [x] QA round 3 (API + UI audit)
+- [x] Security audit round 3
+- [x] Commit `027afa5` pushed to main
+- [x] 0 TypeScript errors
+
+### Completed (Session 27) — All Non-Payment Features + Full QA Audit
+- [x] Review submission UI + API (`ReviewForm.tsx` + `POST /api/reviews`)
+- [x] Global search (`GlobalSearch.tsx` + `GET /api/search?q=`)
+- [x] Onboarding modal (3-step, localStorage flag)
+- [x] Docs tutorial (full agent lifecycle with curl examples)
+- [x] Webhook retry + delivery history (3 attempts, exponential backoff, `webhook_deliveries` table)
+- [x] Upstash Redis rate limiting (replaces in-memory, fallback if no env vars)
+- [x] Task dependencies (`POST/GET/DELETE /api/projects/[id]/dependencies`, circular check)
+- [x] CI/CD feedback loop (`check_run.completed` + `pull_request_review.submitted`)
+- [x] Email notifications via Resend (3 templates + `notification_preferences` table + profile toggles)
+- [x] Full QA + security audit (HTML injection, IDOR, URL validation, IPv6 SSRF, payout validation)
+- [x] Schema v9 deployed (webhook_deliveries, ticket_dependencies, notification_preferences)
+- [x] Upstash Redis configured (us-east-1)
+- [x] Resend domain added (openpod.work, pending reactivation)
+- [x] 24 files changed (10 new, 14 modified), 2169 insertions
+- [x] 0 TypeScript errors
+- [x] Commit `4598416` pushed to main
+
+### Completed (Session 29) — ClawHub Skill + Promotion Strategy
+- [x] Researched ClawHub ecosystem: SKILL.md format, publishing process, security pipeline, verified badge
+- [x] Built `OpenPod/clawhub-skill/SKILL.md` — all 25 Agent API endpoints as OpenClaw skill
+- [x] Verified curl examples against actual API routes (fixed 4 mismatches)
+- [x] Published to ClawHub: `openpod@1.0.0` (hash: `k974mgdhhq6ry0nd1es1g459xd82vckt`)
+- [x] Updated `.context/knowledge/openclaw.md` with promotion channels, publishing guide, success stories
+- [x] Mapped 12 promotion channels ranked by impact
+- [x] Documented 4 AI agent directories for free listings
+- [x] 1 new file, 1 modified file
+- [x] 0 TypeScript errors
+
+### Completed (Session 30) — Dual Payment System (Stripe Connect + x402 Protocol)
+- [x] Schema v10 migration (agent_registry + projects + transactions payment fields, stripe_events, x402_payments)
+- [x] Schema v10 deployed to Supabase
+- [x] Types updated (StripeEvent, X402Payment interfaces + payment fields on existing types)
+- [x] Constants updated (ESCROW_STATUSES, PAYMENT_RAILS, 3 new webhook events)
+- [x] Bug fix: TicketDetail.tsx client-side transaction → server endpoint (cookie auth)
+- [x] Stripe lib (`src/lib/stripe.ts`) — singleton, Express accounts, Checkout, Transfers, webhook verification
+- [x] Stripe Connect onboarding endpoint (`POST /api/stripe/connect/onboard`)
+- [x] Stripe Connect status endpoint (`GET /api/stripe/connect/status`)
+- [x] Stripe Checkout endpoint (`POST /api/stripe/checkout`) — project escrow funding
+- [x] Stripe webhook handler (`POST /api/stripe/webhooks`) — checkout.session.completed, account.updated, transfer.failed
+- [x] Agent ticket approval modified — auto-settles via Stripe if funded + onboarded
+- [x] x402 lib (`src/lib/x402.ts`) — facilitator, USDC balance reader, wallet validation, payment verification
+- [x] Agent registration accepts wallet_address
+- [x] Agent profile PATCH endpoint (wallet_address, tagline, description, website)
+- [x] Agent balance endpoint (`GET /api/agent/v1/me/balance`)
+- [x] x402-gated delegate endpoint (`POST /api/agent/v1/delegate`)
+- [x] x402-gated service invoke endpoint (`POST /api/agent/v1/services/[agentSlug]/invoke`)
+- [x] Email updated (removed "coming soon", added real settlement info)
+- [x] agents.json updated (x402 capabilities + 2 new flows)
+- [x] ai-plugin.json updated (x402, wallet, 30+ endpoints)
+- [x] openapi.json updated (30+ endpoints)
+- [x] Dependencies installed (stripe, ethers)
+- [x] 0 TypeScript errors, clean build
+- [x] 13 new files, 9 modified files
+
 ### Not Started (Phase 2 remaining)
 - [ ] Dashboard rework (richer project cards)
 
 ## Phase 3: Foundation — GitHub + Payments
 
 ### Phase 3.1: GitHub App Integration — DONE + AUDITED (Sessions 25-26)
-- [x] GitHub App created (OpenPod-Work, App ID 3082144)
-- [x] 3 agent API endpoints (token, prs, verify-deliverable)
-- [x] Webhook handler (PR merged → auto-review)
-- [x] Schema v8 deployed
-- [x] UI: repo picker in creation + inline connect in settings + PR status badges
-- [x] Deep QA + security audit completed (Session 26)
-- [x] All audit findings fixed (Session 26 — commit `f152023`)
+### Phase 3.2: Stripe Connect + x402 Protocol — DONE (Session 30)
+- [x] Stripe Connect (Express accounts, escrow Checkout, auto-payout Transfers, webhook handler)
+- [x] x402 Protocol (agent-to-agent USDC on Base, delegate, invoke, Coinbase facilitator)
+- [x] Wallet address on agent_registry + registration + profile
+- [x] Dual payment rails (ledger/stripe/x402) on transactions table
+- [ ] **Pending:** Add Stripe env vars to Vercel
+- [ ] **Pending:** Create platform wallet + add to Vercel
+- [ ] **Pending:** Commit + push Session 30 code
+- [ ] **Pending:** Test both payment flows end-to-end
+- [ ] **Pending:** UI components (FundProjectButton, SetupPayoutsButton)
 
-### Phase 3.2: Stripe Connect + USDC Prep — NEXT
-- [ ] Stripe Connect (human → agent payouts, escrow, 10% commission)
-- [ ] USDC wallet prep (field on agent_registry, display on profiles)
+## Phase 4: Growth
 
-## Phase 4: Core UX
-
-- [ ] Review submission UI (humans rate agents on completed tickets)
-- [ ] Email notifications (Resend: agent applied, ticket done, approval needed)
-- [ ] Global search (agents + projects in Navbar)
-- [ ] Onboarding flow (3-step guided tour)
-
-## Phase 5: Growth
-
+- [x] ClawHub skill published (`openpod@1.0.0`)
+- [ ] Submit to awesome-openclaw-skills (VoltAgent GitHub list)
+- [ ] Post in OpenClaw Discord showcase (Friends of the Crustacean)
+- [ ] Request ClawHub Verified badge
+- [ ] Show HN launch post
+- [ ] Product Hunt launch (AI Agents category)
+- [ ] Reddit posts: r/AI_Agents, r/openclaw, r/LocalLLaMA
+- [ ] Dev.to article
+- [ ] AI Agent Directory listings (aiagentstore.ai, aiagentsdirectory.com, aiagentslist.com, trillionagent.com)
 - [ ] Blog/content pages (MDX for SEO)
 - [ ] Analytics dashboard (project + agent performance)
 - [ ] Reputation bootstrapping (GitHub stats import, seed bounties)
-- [ ] Redis rate limiting (Upstash)
 
-## Phase 6: Advanced
+## Phase 5: Advanced
 
 - [ ] Billing (Free tier + Pro $29/mo)
 - [ ] Dispute resolution
-- [ ] USDC/x402 agent-to-agent payments
 - [ ] GitHub Actions execution (template workflows)

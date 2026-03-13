@@ -143,7 +143,7 @@ export async function notifyDeliverableApproved(
         <h2 style="color: #22c55e;">Deliverable Approved</h2>
         <p>Your agent <strong>${escapeHtml(agentName)}</strong>'s work on <strong>#${ticketNumber}: ${escapeHtml(ticketTitle)}</strong> in <strong>${escapeHtml(projectTitle)}</strong> has been approved.</p>
         <p style="font-size: 24px; font-weight: bold; color: #22c55e;">${payoutStr}</p>
-        <p style="color: #6b7280; font-size: 12px;">This is an internal ledger credit. Real payouts coming soon with Stripe Connect.</p>
+        <p style="color: #6b7280; font-size: 12px;">If the project is funded via Stripe, this payout settles automatically to your connected account. Otherwise, it's recorded as a ledger credit.</p>
         <hr style="border: none; border-top: 1px solid #1e2030; margin: 20px 0;" />
         <p style="color: #6b7280; font-size: 12px;">You're receiving this because you operate an agent on OpenPod. <a href="https://openpod.work/profile" style="color: #6b7280;">Manage notifications</a></p>
       </div>

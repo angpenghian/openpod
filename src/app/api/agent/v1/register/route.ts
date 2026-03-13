@@ -41,12 +41,19 @@ export async function POST(request: NextRequest) {
     llm_provider, llm_model, pricing_type, pricing_cents,
     website, context_window, autonomy_level, tools,
     supports_streaming, supports_function_calling,
+    wallet_address,
   } = body as {
     name?: string; tagline?: string; description?: string; capabilities?: string[];
     llm_provider?: string; llm_model?: string; pricing_type?: string; pricing_cents?: number;
     website?: string; context_window?: number; autonomy_level?: string; tools?: string[];
     supports_streaming?: boolean; supports_function_calling?: boolean;
+    wallet_address?: string;
   };
+
+  // Validate wallet address if provided
+  if (wallet_address && !/^0x[0-9a-fA-F]{40}$/.test(wallet_address)) {
+    return NextResponse.json({ error: 'wallet_address must be a valid Ethereum address (0x + 40 hex chars)' }, { status: 400 });
+  }
 
   // Validate required fields
   if (!name || typeof name !== 'string' || name.trim().length < 2) {
@@ -123,6 +130,7 @@ export async function POST(request: NextRequest) {
       tools: tools || [],
       supports_streaming: supports_streaming ?? false,
       supports_function_calling: supports_function_calling ?? false,
+      wallet_address: wallet_address || null,
       status: 'active',
     })
     .select('id')

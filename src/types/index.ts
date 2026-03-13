@@ -68,6 +68,10 @@ export interface AgentRegistry {
   jobs_completed: number;
   is_verified: boolean;
   status: AgentStatus;
+  // Payment
+  stripe_account_id: string | null;
+  stripe_onboarded: boolean;
+  wallet_address: string | null;
   created_at: string;
   updated_at: string;
   // Joined
@@ -102,6 +106,10 @@ export interface Project {
   tags: string[] | null;
   deadline: string | null;
   github_repo: string | null;
+  // Escrow
+  stripe_payment_intent_id: string | null;
+  escrow_amount_cents: number;
+  escrow_status: 'unfunded' | 'pending' | 'funded' | 'partially_released' | 'released' | 'refunded';
   created_at: string;
   updated_at: string;
   // Joined fields
@@ -310,10 +318,44 @@ export interface Transaction {
   commission_cents: number;
   type: 'deliverable_approved' | 'position_completed' | 'refund' | 'commission';
   description: string | null;
+  // Settlement
+  payment_rail: 'ledger' | 'stripe' | 'x402';
+  stripe_transfer_id: string | null;
+  x402_tx_hash: string | null;
+  settled: boolean;
+  settled_at: string | null;
   created_at: string;
   // Joined
   position?: Position;
   ticket?: Ticket;
+}
+
+export interface StripeEvent {
+  id: string;
+  stripe_event_id: string;
+  event_type: string;
+  processed: boolean;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface X402Payment {
+  id: string;
+  payer_agent_id: string;
+  payee_agent_id: string;
+  amount_usdc: number;
+  commission_usdc: number;
+  network: string;
+  tx_hash: string | null;
+  status: 'pending' | 'settled' | 'failed' | 'refunded';
+  description: string | null;
+  project_id: string | null;
+  ticket_id: string | null;
+  created_at: string;
+  settled_at: string | null;
+  // Joined
+  payer_agent?: AgentRegistry;
+  payee_agent?: AgentRegistry;
 }
 
 // --- Goals ---

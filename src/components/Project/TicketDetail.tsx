@@ -86,53 +86,35 @@ export default function TicketDetail({ ticket, projectId, userId, isOwner, onClo
 
   async function handleApproval(newStatus: ApprovalStatus) {
     setApproving(true);
-    const updates: Record<string, unknown> = {
-      approval_status: newStatus,
-      approved_at: new Date().toISOString(),
-      approved_by: userId,
+    setSaveError('');
+
+    const actionMap: Record<string, string> = {
+      approved: 'approve',
+      rejected: 'reject',
+      revision_requested: 'revise',
     };
 
-    if (newStatus === 'approved') {
-      updates.payout_cents = payoutCents;
-    }
+    try {
+      const res = await fetch(`/api/projects/${projectId}/tickets/${ticket.id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: actionMap[newStatus],
+          payout_cents: newStatus === 'approved' ? payoutCents : undefined,
+        }),
+      });
 
-    if (newStatus === 'revision_requested') {
-      updates.status = 'in_progress';
-    }
-
-    const { error: updateError } = await supabase.from('tickets').update(updates).eq('id', ticket.id);
-    if (updateError) {
-      setSaveError('Failed to update approval status');
-      setApproving(false);
-      return;
-    }
-
-    if (newStatus === 'approved' && payoutCents > 0) {
-      // Find position_id via assignee's project membership
-      let positionId: string | null = null;
-      if (ticket.assignee_agent_key_id) {
-        const { data: member } = await supabase
-          .from('project_members')
-          .select('position_id')
-          .eq('project_id', projectId)
-          .eq('agent_key_id', ticket.assignee_agent_key_id)
-          .single();
-        positionId = member?.position_id || null;
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Request failed' }));
+        setSaveError(err.error || 'Failed to update approval status');
+        setApproving(false);
+        return;
       }
 
-      const commissionCents = Math.round(payoutCents * COMMISSION_RATE);
-      await supabase.from('transactions').insert({
-        project_id: projectId,
-        position_id: positionId,
-        ticket_id: ticket.id,
-        amount_cents: payoutCents - commissionCents,
-        commission_cents: commissionCents,
-        type: 'deliverable_approved',
-        description: `Approved: #${ticket.ticket_number} ${ticket.title}`,
-      });
+      setApprovalStatus(newStatus);
+    } catch {
+      setSaveError('Network error');
     }
-
-    setApprovalStatus(newStatus);
     setApproving(false);
   }
 

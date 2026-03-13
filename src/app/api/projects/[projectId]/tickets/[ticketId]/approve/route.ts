@@ -1,22 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { authenticateAgent, verifyProjectOwnerOrPM } from '@/lib/agent-auth';
+import { createClient } from '@/lib/supabase/server';
 import { fireWebhooks } from '@/lib/webhooks';
 import { notifyDeliverableApproved } from '@/lib/email';
 import { COMMISSION_RATE } from '@/lib/constants';
 import { settleStripeTransfer } from '@/lib/stripe';
 
-// POST /api/agent/v1/tickets/[ticketId]/approve — Approve/reject/revise a ticket
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// POST /api/projects/[projectId]/tickets/[ticketId]/approve
+// Human-side ticket approval (cookie auth) — fixes duplicate transaction bug
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ ticketId: string }> }
+  { params }: { params: Promise<{ projectId: string; ticketId: string }> }
 ) {
-  const auth = await authenticateAgent(request);
-  if (auth instanceof NextResponse) return auth;
+  const { projectId, ticketId } = await params;
 
-  const { ticketId } = await params;
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ticketId)) {
-    return NextResponse.json({ error: 'Invalid ticket ID' }, { status: 400 });
+  if (!UUID_REGEX.test(projectId) || !UUID_REGEX.test(ticketId)) {
+    return NextResponse.json({ error: 'Invalid IDs' }, { status: 400 });
+  }
+
+  // Cookie-based auth
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   let body: Record<string, unknown>;
@@ -36,27 +44,33 @@ export async function POST(
 
   const admin = createAdminClient();
 
-  // Fetch ticket (include deliverables for hash verification)
+  // Verify user owns the project
+  const { data: project, error: projectError } = await admin
+    .from('projects')
+    .select('id, owner_id, title, escrow_amount_cents, escrow_status')
+    .eq('id', projectId)
+    .single();
+
+  if (projectError || !project) {
+    return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+  }
+
+  if (project.owner_id !== user.id) {
+    return NextResponse.json({ error: 'Only the project owner can approve tickets' }, { status: 403 });
+  }
+
+  // Fetch ticket
   const { data: ticket, error: ticketError } = await admin
     .from('tickets')
     .select('id, project_id, title, status, assignee_agent_key_id, ticket_number, deliverables')
     .eq('id', ticketId)
+    .eq('project_id', projectId)
     .single();
 
   if (ticketError || !ticket) {
     return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
   }
 
-  // Verify agent is project owner or PM
-  const isAuthorized = await verifyProjectOwnerOrPM(auth.agentKeyId, ticket.project_id);
-  if (!isAuthorized) {
-    return NextResponse.json(
-      { error: 'Only the project owner or PM can approve tickets' },
-      { status: 403 }
-    );
-  }
-
-  // Validate ticket status
   if (!['done', 'in_review'].includes(ticket.status)) {
     return NextResponse.json(
       { error: `Ticket must be in done or in_review status (currently: ${ticket.status})` },
@@ -74,38 +88,43 @@ export async function POST(
     const commissionCents = Math.round(payoutCents * COMMISSION_RATE);
 
     // Update ticket
-    await admin
-      .from('tickets')
-      .update({
-        approval_status: 'approved',
-        payout_cents: payoutCents,
-        approved_at: now,
-        approved_by: auth.agentKeyId,
-      })
-      .eq('id', ticketId);
+    await admin.from('tickets').update({
+      approval_status: 'approved',
+      payout_cents: payoutCents,
+      approved_at: now,
+      approved_by: user.id,
+    }).eq('id', ticketId);
 
-    // Create transaction record
+    // Create transaction record (gross amount — matches agent API endpoint)
+    let transactionId: string | null = null;
     if (payoutCents > 0) {
+      // Find position_id via assignee's project membership
+      let positionId: string | null = null;
+      if (ticket.assignee_agent_key_id) {
+        const { data: member } = await admin
+          .from('project_members')
+          .select('position_id')
+          .eq('project_id', projectId)
+          .eq('agent_key_id', ticket.assignee_agent_key_id)
+          .single();
+        positionId = member?.position_id || null;
+      }
+
       const { data: tx } = await admin.from('transactions').insert({
-        project_id: ticket.project_id,
+        project_id: projectId,
+        position_id: positionId,
         ticket_id: ticketId,
         amount_cents: payoutCents,
         commission_cents: commissionCents,
         type: 'deliverable_approved',
-        description: comment || `Approved ticket #${ticket.ticket_number}: ${ticket.title}`,
+        description: comment || `Approved: #${ticket.ticket_number} ${ticket.title}`,
       }).select('id').single();
 
-      // Attempt Stripe settlement if project is funded
-      if (tx?.id) {
-        const { data: project } = await admin
-          .from('projects')
-          .select('id, escrow_amount_cents, escrow_status')
-          .eq('id', ticket.project_id)
-          .single();
+      transactionId = tx?.id || null;
 
-        if (project && project.escrow_status === 'funded' && project.escrow_amount_cents >= payoutCents) {
-          await settleStripeTransfer(admin, tx.id, ticket.assignee_agent_key_id, payoutCents, commissionCents, project);
-        }
+      // Attempt Stripe settlement if project is funded and agent is Stripe-onboarded
+      if (transactionId && project.escrow_status === 'funded' && project.escrow_amount_cents >= payoutCents) {
+        await settleStripeTransfer(admin, transactionId, ticket.assignee_agent_key_id, payoutCents, commissionCents, project);
       }
     }
 
@@ -127,26 +146,16 @@ export async function POST(
         .single();
 
       if (agentKey) {
-        const { data: project } = await admin
-          .from('projects')
-          .select('title')
-          .eq('id', ticket.project_id)
-          .single();
-
         notifyDeliverableApproved(
           agentKey.owner_id,
           agentKey.name,
           ticket.title,
           ticket.ticket_number,
           payoutCents,
-          project?.title || 'Unknown project',
+          project.title,
         ).catch(() => {});
       }
     }
-
-    // Count verified deliverable hashes
-    const deliverables = (ticket.deliverables as Array<{ content_hash?: string }>) || [];
-    const verifiedHashes = deliverables.filter(d => d.content_hash).length;
 
     return NextResponse.json({
       data: {
@@ -155,17 +164,12 @@ export async function POST(
         payout_cents: payoutCents,
         commission_cents: commissionCents,
         net_payout_cents: payoutCents - commissionCents,
-        verified_hashes: verifiedHashes,
-        total_deliverables: deliverables.length,
       },
     });
   }
 
   if (action === 'reject') {
-    await admin
-      .from('tickets')
-      .update({ approval_status: 'rejected' })
-      .eq('id', ticketId);
+    await admin.from('tickets').update({ approval_status: 'rejected' }).eq('id', ticketId);
 
     if (ticket.assignee_agent_key_id) {
       fireWebhooks(admin, 'deliverable_rejected', [ticket.assignee_agent_key_id], {
@@ -176,19 +180,14 @@ export async function POST(
       });
     }
 
-    return NextResponse.json({
-      data: { ticket_id: ticketId, action: 'rejected', comment },
-    });
+    return NextResponse.json({ data: { ticket_id: ticketId, action: 'rejected', comment } });
   }
 
   // action === 'revise'
-  await admin
-    .from('tickets')
-    .update({
-      approval_status: 'revision_requested',
-      status: 'in_progress',
-    })
-    .eq('id', ticketId);
+  await admin.from('tickets').update({
+    approval_status: 'revision_requested',
+    status: 'in_progress',
+  }).eq('id', ticketId);
 
   if (ticket.assignee_agent_key_id) {
     fireWebhooks(admin, 'deliverable_rejected', [ticket.assignee_agent_key_id], {
@@ -200,7 +199,5 @@ export async function POST(
     });
   }
 
-  return NextResponse.json({
-    data: { ticket_id: ticketId, action: 'revision_requested', comment },
-  });
+  return NextResponse.json({ data: { ticket_id: ticketId, action: 'revision_requested', comment } });
 }

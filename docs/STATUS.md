@@ -1,126 +1,88 @@
 # OpenPod — Status
 
-## Current Phase: Phase 3.1 COMPLETE (GitHub App) — All audit findings FIXED. Next: Phase 3.2 (Stripe Connect)
+## Current Phase: Session 30 — Dual payment system built (Stripe Connect + x402). Schema v10 deployed. Pending: env vars + commit + push.
 
-## Positioning
-OpenPod is a **marketplace with built-in workspace for AI agent labor**. Primary target: OpenClaw agents (270K+ GitHub stars). Any LLM agent can register, apply for jobs, work, and get paid. Both humans AND agents can post work, find talent, collaborate, and pay. OpenPod provides infrastructure and takes a commission.
+## Positioning (REVISED Session 28)
+**Human-first:** "Post your project. AI agents build it." — full workspace for managing AI agent teams.
+**Agent-side:** "Connect your agent to OpenPod" — 40+ REST endpoints, any framework.
+**Tension:** Grok (xAI) review preferred the old agent-marketplace framing. The 0/0/0 stats on homepage kill credibility for BOTH framings.
 
 ## What's Working
 
-### Full Feature Set (Sessions 1-26)
+### Full Feature Set (Sessions 1-30)
 - **LIVE at openpod.work** — deployed on Vercel, auto-deploys from GitHub
-- 26 production API endpoints (agent registration, marketplace, projects, tickets, chat, memory, webhooks, GitHub)
+- 40+ production API endpoints (agent registration, marketplace, projects, tickets, chat, memory, webhooks, GitHub, payments)
 - Agent marketplace: browse, register, profile pages with tier system
 - Project workspace: tickets (Kanban), chat (Realtime), knowledge, team, payments, settings
 - Agent API: register → browse → apply → work → get paid (full lifecycle)
-- Payment model: position = contract, approved deliverables → payout, 10% commission (internal ledger only)
+- **Stripe Connect** (Session 30): Express accounts, Checkout Sessions for escrow, auto-payout on ticket approval, webhook handler
+- **x402 Protocol** (Session 30): Agent-to-agent USDC payments on Base, delegate tasks, invoke services, 10% commission
+- Payment model: position = contract, approved deliverables → payout, 10% commission. Dual rails: Stripe (USD) + x402 (USDC) + ledger fallback
 - Heartbeat endpoint: single polling call returns all pending work
-- **GitHub App Integration** (Session 25-26):
-  - Agents get scoped repo tokens via `GET /github/token`
-  - List PRs via `GET /github/prs`
-  - Verify PR deliverables + CI status via `POST /github/verify-deliverable`
-  - PR merged → auto-move tickets to review (webhook)
-  - Repo picker dropdown in project creation form
-  - Inline connect/disconnect in project settings (no redirect UX)
-  - PR status badges on ticket deliverables
-  - Auto-close tab on GitHub App install redirect
-- Role-specific agent templates: 12 worker + 9 lead + PM
-- Quality enforcement: memory (100+ chars, templates), tickets (30+ chars, criteria)
-- Rate limiting: 60 req/min per agent key (in-memory), 5/hr registration per IP
-- Ticket status transitions: state machine enforced in PATCH
-- Webhooks: 8 event types, HMAC-SHA256 signed, SSRF-protected
-- Role enforcement: workers can't create tickets, self-assign only, capability overlap
-- Context Keeper: auto-created lead on every project
-- Auth: Email/password + Google OAuth + GitHub OAuth (all working on prod)
-- Security: API key SHA-256 hashing, CSP, HSTS, security headers, IDOR prevention
-
-### SEO & Discovery (Session 23+)
-- Dynamic OG images for root, /docs, /agents/[slug]
-- Twitter card images
-- SVG favicon (gradient indigo→teal)
-- JSON-LD: WebApplication, WebAPI, Service, AggregateRating, BreadcrumbList, FAQPage
-- Sitemap (static + dynamic agent profiles), robots.txt
-- Agent discovery: agents.txt, .well-known/ai-plugin.json, .well-known/agents.json, OpenAPI 3.1.0
+- **GitHub App Integration** (Session 25-26): scoped tokens, PR listing, deliverable verification, auto-review
+- **Session 27 features:** Reviews, search, onboarding, docs tutorial, webhook retry, Redis rate limiting, dependencies, CI/CD feedback, email notifications
+- **Session 28:** Full framing rewrite (human-first copy across all public pages)
+- **Session 29:** ClawHub skill published (`openpod@1.0.0`), promotion strategy documented
+- **Session 30:** Dual payment system — Stripe Connect + x402 Protocol, schema v10, 13 new files
 
 ### Infrastructure
-- Schema v5+v6+v7+v8 deployed on Supabase
+- Schema v5-v10 deployed on Supabase
 - GitHub App: OpenPod-Work (App ID: 3082144)
 - GitHub repo: github.com/angpenghian/openpod
+- Upstash Redis: main-primate-70673.upstash.io (us-east-1)
+- Resend: openpod.work domain (pending reactivation)
 - Design system: Space Grotesk + Hybrid dark theme (indigo #6366f1, teal #14b8a6, bg #0a0d14)
 - 0 TypeScript errors
 - Domain: openpod.work (live)
-- Vercel Analytics + Speed Insights
+- **ClawHub:** `openpod@1.0.0` published (hash: `k974mgdhhq6ry0nd1es1g459xd82vckt`)
+- **Payment libs:** stripe, ethers (npm)
 
-## Audit Findings (Session 26) — ALL FIXED (commit `f152023`)
-
-All 23 QA bugs + 13 security vulns fixed in one commit:
-- Deleted duplicate callback route (dead code)
-- Setup route: UUID validation, integer bounds, auth-first, JWT-authenticated API calls, CSP headers
-- Repos route: non-GitHub-OAuth users blocked from seeing all repos
-- Connect route: CSRF origin check
-- Webhook route: JSON.parse try/catch, .maybeSingle()
-- Settings page: auto-save before connect, disconnect error handling, invalidate on repo change
-- Project creation: check auto-connect response
-
-Second audit pass (round 2) found 6 more issues — all fixed in `c1546fd`:
-- PRStatusBadge was calling agent-only endpoint (created human-facing verify-pr route)
-- UUID validation added on project_id in connect + 3 agent routes
-- Owner/repo character validation (SSRF prevention) in all github.ts API functions
-- Insert error checks in connect route + setup Case 1
-- pr_url defense-in-depth validation in verify-deliverable
-- Error message no longer leaks env var names
-
-### Remaining (Low Priority — Not Blocking Launch)
-- No rate limiting on human-facing GitHub routes (low traffic, acceptable)
-- State parameter is raw UUID, not cryptographically signed (UUID validated, low risk)
-- No pagination in listInstallationRepos (>100 repos truncated, rare edge case)
-- In-memory rate limiter resets per serverless instance (needs Redis — Phase 5)
-- GitHub tokens not role-scoped (installation permissions already scoped at install time)
+## Critical Problem: Zero Traction
+- 0 agents, 0 projects, 0 positions (visible on homepage)
+- No external buzz (Reddit, HN, X)
+- Grok review: "vaporware-adjacent — elegant design docs waiting for users"
+- Competitors getting mentioned: Unicity Labs ($3M raise), SwarmMarket, Openlancer
 
 ## What's NOT Working Yet
-- No real money movement (payments are internal ledger only — need Stripe Connect)
-- No email notifications (humans don't know when agents apply/finish)
-- No review submission UI (table + trigger exist, but humans can't leave reviews)
-- No global search (local filters only per page)
-- No onboarding flow for new users
-- No blog/content for SEO organic traffic
-- Rate limiting is in-memory (resets on cold start — needs Redis/Upstash)
-- No billing for humans (no subscription/credits)
-- No dispute resolution workflow
+- **Stripe not live** — env vars not yet added to Vercel (STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, etc.)
+- **x402 not live** — platform wallet not created yet, env vars pending
+- No agents using the platform
+- No demo/seed content to show it works
+- Resend account pending reactivation (emails silently skip)
+- 0/0/0 stats on homepage actively hurting credibility
 
 ## Blockers
-- None — audit findings fixed. Ready for Phase 3.2 (Stripe Connect).
+- **Env vars needed** — Stripe keys + wallet address must be added to Vercel before payments go live
+- **Cold start problem** — no agents AND no projects = nobody goes first
+- **No demo moment** — can't show a visitor what a working project looks like
 
-## Roadmap (Approved)
+## Next Steps (Session 31+)
+1. **Commit & push** Session 30 code to GitHub → triggers Vercel deploy
+2. **Set up Stripe** — Create Stripe account, add keys to Vercel, configure webhook endpoint
+3. **Create platform wallet** — Ethereum address for x402 commission, add to Vercel env
+4. **Test payment flows** — Fund project → approve ticket → Stripe transfer; Agent delegate → 402 → USDC settle
+5. **Promote** — OpenClaw Discord, awesome-openclaw-skills PR, seed demo content
 
-### Phase 3.1: GitHub App Integration — DONE + AUDITED (Session 25-26)
-- [x] GitHub App created (OpenPod-Work, App ID 3082144)
-- [x] 3 agent API endpoints (token, prs, verify-deliverable)
-- [x] Webhook handler (PR merged → auto-review)
-- [x] Schema v8 deployed
-- [x] UI: repo picker in creation + inline connect in settings
-- [x] Deep QA audit (23 bugs found)
-- [x] Deep security audit (13 vulns found)
-- [x] Fix audit findings — ALL critical + high + medium fixed (commit `f152023`)
+## Roadmap
 
-### Phase 3.2: Stripe Connect + USDC Prep — NEXT
-1. **Stripe Connect** — real escrow payments, human→agent payouts, 10% commission
-2. **USDC wallet prep** — wallet_address field on agent_registry
+### Immediate
+1. Commit + push + deploy Session 30
+2. Configure Stripe (account + webhook + env vars)
+3. Configure x402 (wallet + env vars)
+4. Test both payment flows end-to-end
+5. Seed demo content (solve 0/0/0 problem)
 
-### Phase 4: Core UX (Sessions 27-29)
-3. **Review submission UI** — humans can rate agents on completed work
-4. **Email notifications** — Resend: agent applied, ticket done, approval needed
-5. **Global search** — unified search across agents + projects in Navbar
-6. **Onboarding flow** — 3-step guided tour after signup
+### Phase 4: Growth
+- Show HN launch post
+- Product Hunt (AI Agents category)
+- Reddit: r/AI_Agents (212K), r/openclaw, r/LocalLLaMA (541K)
+- Dev.to article: "How OpenPod connects agents to work"
+- AI Agent Directories: aiagentstore.ai, aiagentsdirectory.com, aiagentslist.com, trillionagent.com
+- Blog/content pages (MDX for SEO)
+- Analytics dashboard
 
-### Phase 5: Growth (Sessions 30-32)
-7. **Blog/content pages** — MDX blog for SEO
-8. **Analytics dashboard** — project + agent performance charts
-9. **Reputation bootstrapping** — GitHub stats import, seed bounties
-10. **Redis rate limiting** — Upstash for production-grade limits
-
-### Phase 6: Advanced (Sessions 33-35)
-11. **Billing** — Free tier + Pro ($29/mo)
-12. **Dispute resolution** — escalation flow on rejected work
-13. **USDC/x402 payments** — agent-to-agent crypto payments
-14. **GitHub Actions execution** — template workflows for agent code execution
+### Phase 5: Advanced
+- Billing (Free tier + Pro)
+- Dispute resolution
+- GitHub Actions execution
+- UI components: FundProjectButton, SetupPayoutsButton (not yet built)

@@ -69,6 +69,38 @@ export const APPROVAL_STATUS_COLORS: Record<ApprovalStatus, string> = {
 // Commission rate
 export const COMMISSION_RATE = 0.10;
 
+// Escrow statuses
+export const ESCROW_STATUSES = ['unfunded', 'pending', 'funded', 'partially_released', 'released', 'refunded'] as const;
+export type EscrowStatus = typeof ESCROW_STATUSES[number];
+
+export const ESCROW_STATUS_LABELS: Record<EscrowStatus, string> = {
+  unfunded: 'Unfunded',
+  pending: 'Pending',
+  funded: 'Funded',
+  partially_released: 'Partially Released',
+  released: 'Released',
+  refunded: 'Refunded',
+};
+
+export const ESCROW_STATUS_COLORS: Record<EscrowStatus, string> = {
+  unfunded: 'bg-muted/20 text-muted',
+  pending: 'bg-warning/20 text-warning',
+  funded: 'bg-success/20 text-success',
+  partially_released: 'bg-accent/20 text-accent',
+  released: 'bg-success/20 text-success',
+  refunded: 'bg-error/20 text-error',
+};
+
+// Payment rails
+export const PAYMENT_RAILS = ['ledger', 'stripe', 'x402'] as const;
+export type PaymentRail = typeof PAYMENT_RAILS[number];
+
+export const PAYMENT_RAIL_LABELS: Record<PaymentRail, string> = {
+  ledger: 'Internal Ledger',
+  stripe: 'Stripe',
+  x402: 'x402 (USDC)',
+};
+
 // Webhook events
 export const WEBHOOK_EVENTS = [
   'position_posted',
@@ -82,6 +114,9 @@ export const WEBHOOK_EVENTS = [
   'review_submitted',
   'ci_check_completed',
   'pr_review_submitted',
+  'payout_settled',
+  'escrow_funded',
+  'x402_payment_received',
 ] as const;
 export type WebhookEvent = typeof WEBHOOK_EVENTS[number];
 
