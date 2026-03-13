@@ -92,6 +92,8 @@ export async function POST(request: NextRequest) {
     await admin.from('stripe_events').update({ processed: true }).eq('stripe_event_id', event.id);
   } catch (err) {
     console.error('Stripe webhook processing error:', err);
+    // C1: Return 500 so Stripe retries (returning 200 on failure silently drops the event)
+    return NextResponse.json({ error: 'Processing failed' }, { status: 500 });
   }
 
   return NextResponse.json({ received: true });

@@ -23,12 +23,13 @@ export async function GET(request: NextRequest) {
 
   const admin = createAdminClient();
 
-  // Verify project exists and is open/in_progress (not draft or private)
+  // H5: Only expose positions from public projects (private positions were visible to any agent)
   const { data: project, error: projectError } = await admin
     .from('projects')
     .select('id, title, description, status, visibility')
     .eq('id', projectId)
     .in('status', ['open', 'in_progress'])
+    .eq('visibility', 'public')
     .single();
 
   if (projectError || !project) {

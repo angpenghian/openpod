@@ -92,10 +92,11 @@ export async function POST(
     }
     const commissionCents = Math.round(payoutCents * COMMISSION_RATE);
 
-    // Update ticket
+    // Update ticket — H6: also set status to 'done' so Kanban reflects approval
     await admin
       .from('tickets')
       .update({
+        status: 'done',
         approval_status: 'approved',
         payout_cents: payoutCents,
         approved_at: now,
@@ -105,9 +106,31 @@ export async function POST(
 
     // Create transaction record
     if (payoutCents > 0) {
+      // H1+H2: Look up position_id and agent_registry_id for complete audit trail
+      let positionId: string | null = null;
+      let agentRegistryId: string | null = null;
+      if (ticket.assignee_agent_key_id) {
+        const { data: member } = await admin
+          .from('project_members')
+          .select('position_id')
+          .eq('project_id', ticket.project_id)
+          .eq('agent_key_id', ticket.assignee_agent_key_id)
+          .single();
+        positionId = member?.position_id || null;
+
+        const { data: agentKey } = await admin
+          .from('agent_keys')
+          .select('registry_id')
+          .eq('id', ticket.assignee_agent_key_id)
+          .single();
+        agentRegistryId = agentKey?.registry_id || null;
+      }
+
       const { data: tx } = await admin.from('transactions').insert({
         project_id: ticket.project_id,
+        position_id: positionId,
         ticket_id: ticketId,
+        agent_registry_id: agentRegistryId,
         amount_cents: payoutCents,
         commission_cents: commissionCents,
         type: 'deliverable_approved',
@@ -122,7 +145,8 @@ export async function POST(
           .eq('id', ticket.project_id)
           .single();
 
-        if (project && project.escrow_status === 'funded' && project.escrow_amount_cents >= payoutCents) {
+        // C3: Include 'partially_released' — after first payout, status changes from 'funded' to 'partially_released'
+        if (project && ['funded', 'partially_released'].includes(project.escrow_status) && project.escrow_amount_cents >= payoutCents) {
           const settled = await settleStripeTransfer(admin, tx.id, ticket.assignee_agent_key_id, payoutCents, commissionCents, project);
           if (!settled) {
             // Graceful fallback: mark as ledger-only

@@ -98,8 +98,9 @@ export async function POST(
     }
     const commissionCents = Math.round(payoutCents * COMMISSION_RATE);
 
-    // Update ticket
+    // Update ticket — H6: also set status to 'done' so Kanban reflects approval
     await admin.from('tickets').update({
+      status: 'done',
       approval_status: 'approved',
       payout_cents: payoutCents,
       approved_at: now,
@@ -109,8 +110,9 @@ export async function POST(
     // Create transaction record (gross amount — matches agent API endpoint)
     let transactionId: string | null = null;
     if (payoutCents > 0) {
-      // Find position_id via assignee's project membership
+      // Find position_id and agent_registry_id via assignee's project membership
       let positionId: string | null = null;
+      let agentRegistryId: string | null = null;
       if (ticket.assignee_agent_key_id) {
         const { data: member } = await admin
           .from('project_members')
@@ -119,12 +121,21 @@ export async function POST(
           .eq('agent_key_id', ticket.assignee_agent_key_id)
           .single();
         positionId = member?.position_id || null;
+
+        // H2: Look up agent_registry_id for audit trail
+        const { data: agentKey } = await admin
+          .from('agent_keys')
+          .select('registry_id')
+          .eq('id', ticket.assignee_agent_key_id)
+          .single();
+        agentRegistryId = agentKey?.registry_id || null;
       }
 
       const { data: tx } = await admin.from('transactions').insert({
         project_id: projectId,
         position_id: positionId,
         ticket_id: ticketId,
+        agent_registry_id: agentRegistryId,
         amount_cents: payoutCents,
         commission_cents: commissionCents,
         type: 'deliverable_approved',
@@ -134,7 +145,8 @@ export async function POST(
       transactionId = tx?.id || null;
 
       // Attempt Stripe settlement if project is funded and agent is Stripe-onboarded
-      if (transactionId && project.escrow_status === 'funded' && project.escrow_amount_cents >= payoutCents) {
+      // C3: Include 'partially_released' — after first payout, status changes from 'funded' to 'partially_released'
+      if (transactionId && ['funded', 'partially_released'].includes(project.escrow_status) && project.escrow_amount_cents >= payoutCents) {
         const settled = await settleStripeTransfer(admin, transactionId, ticket.assignee_agent_key_id, payoutCents, commissionCents, project);
         if (!settled) {
           await admin.from('transactions').update({

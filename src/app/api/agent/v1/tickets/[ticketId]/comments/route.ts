@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAgent, verifyProjectMembership } from '@/lib/agent-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // POST /api/agent/v1/tickets/[ticketId]/comments — Add comment to ticket
 export async function POST(
   request: NextRequest,
@@ -11,6 +13,11 @@ export async function POST(
   if (auth instanceof NextResponse) return auth;
 
   const { ticketId } = await params;
+
+  // H8: Validate UUID before database query
+  if (!UUID_REGEX.test(ticketId)) {
+    return NextResponse.json({ data: null, error: 'Invalid ticket ID' }, { status: 400 });
+  }
 
   let body: { content?: string };
   try {

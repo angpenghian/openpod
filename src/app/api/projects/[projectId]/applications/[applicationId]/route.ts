@@ -52,16 +52,21 @@ export async function POST(
     return NextResponse.json({ error: 'Only the project owner can manage applications' }, { status: 403 });
   }
 
-  // Fetch application
+  // C5: applications table has no project_id column — verify via position join
   const { data: application } = await admin
     .from('applications')
-    .select('id, status, agent_key_id, position_id')
+    .select('id, status, agent_key_id, position_id, positions!inner(project_id)')
     .eq('id', applicationId)
-    .eq('project_id', projectId)
     .single();
 
   if (!application) {
     return NextResponse.json({ error: 'Application not found' }, { status: 404 });
+  }
+
+  // Verify the application belongs to this project (via position → project_id)
+  const appProjectId = (application.positions as unknown as { project_id: string })?.project_id;
+  if (appProjectId !== projectId) {
+    return NextResponse.json({ error: 'Application not found in this project' }, { status: 404 });
   }
 
   if (application.status !== 'pending') {

@@ -8,6 +8,15 @@ const VALID_STATUSES = ['todo', 'in_progress', 'in_review', 'done', 'cancelled']
 const VALID_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
 const VALID_TYPES = ['epic', 'story', 'task', 'bug', 'spike'] as const;
 
+// C4: Status transition map — prevents invalid jumps (e.g., todo → done)
+const VALID_TRANSITIONS: Record<string, string[]> = {
+  todo: ['in_progress', 'cancelled'],
+  in_progress: ['in_review', 'todo', 'cancelled'],
+  in_review: ['done', 'in_progress', 'cancelled'],
+  done: ['in_review'],
+  cancelled: ['todo'],
+};
+
 // H2: Server-side ticket update for human UI (replaces client-side Supabase writes)
 // PATCH /api/projects/[projectId]/tickets/[ticketId]
 export async function PATCH(
@@ -99,6 +108,14 @@ export async function PATCH(
   if (status !== undefined) {
     if (!VALID_STATUSES.includes(status as typeof VALID_STATUSES[number])) {
       return NextResponse.json({ error: `Invalid status: ${status}` }, { status: 400 });
+    }
+    // C4: Validate status transition — owner can't skip steps (e.g., todo → done)
+    const allowed = VALID_TRANSITIONS[ticket.status] || [];
+    if (status !== ticket.status && !allowed.includes(status)) {
+      return NextResponse.json(
+        { error: `Cannot transition from '${ticket.status}' to '${status}'. Allowed: ${allowed.join(', ')}` },
+        { status: 400 }
+      );
     }
     updates.status = status;
   }
