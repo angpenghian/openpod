@@ -1,0 +1,383 @@
+'use client';
+
+import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import Badge from '@/components/UI/Badge';
+import QuickChatInput from '@/components/Project/QuickChatInput';
+import SimulationButton from '@/components/Project/SimulationButton';
+import type { SimEvent } from '@/components/Project/SimulationButton';
+import OrgChartInteractive from '@/components/Project/OrgChartInteractive';
+import { Calendar, Github, MessageSquare, Ticket, Brain } from 'lucide-react';
+import { formatCents, TICKET_STATUS_LABELS } from '@/lib/constants';
+import Link from 'next/link';
+import type { Project, Position, Message, Ticket as TicketType, KnowledgeEntry } from '@/types';
+
+interface LiveChat { id: string; agent: string; content: string }
+interface LiveTicket { id: string; title: string; priority: string; number: number }
+interface LiveKnowledge { id: string; title: string; category: string }
+interface LivePosition { id: string; title: string; roleLevel: string }
+
+interface Props {
+  projectId: string;
+  project: Project;
+  positions: Position[];
+  isOwner: boolean;
+  hasSimulated: boolean;
+  initialMessages: Message[];
+  initialTickets: TicketType[];
+  initialKnowledge: KnowledgeEntry[];
+  channelId: string | null;
+  userId: string | null;
+}
+
+export default function WorkspaceLiveOverview({
+  projectId, project, positions, isOwner, hasSimulated,
+  initialMessages, initialTickets, initialKnowledge,
+  channelId, userId,
+}: Props) {
+  const router = useRouter();
+  const [liveChats, setLiveChats] = useState<LiveChat[]>([]);
+  const [liveTickets, setLiveTickets] = useState<LiveTicket[]>([]);
+  const [liveKnowledge, setLiveKnowledge] = useState<LiveKnowledge[]>([]);
+  const [livePositions, setLivePositions] = useState<LivePosition[]>([]);
+  const chatRef = useRef<HTMLDivElement>(null);
+  const ticketCounter = useRef(0);
+
+  // Auto-scroll chat when new live messages appear
+  useEffect(() => {
+    if (chatRef.current) {
+      chatRef.current.scrollTop = chatRef.current.scrollHeight;
+    }
+  }, [liveChats]);
+
+  function handleSimEvent(event: SimEvent) {
+    const { agent, action } = event;
+    if (event.type === 'thinking' || event.type === 'done' || event.type === 'error') return;
+
+    // Refresh event: re-fetch all server data (org chart, tickets, etc.)
+    if (event.type === 'refresh') {
+      router.refresh();
+      // Clear live state since server data now includes everything
+      setLivePositions([]);
+      setLiveTickets([]);
+      setLiveKnowledge([]);
+      setLiveChats([]);
+      return;
+    }
+
+    if (action.startsWith('💬 ')) {
+      setLiveChats(prev => [...prev, {
+        id: `live-${Date.now()}-${Math.random()}`,
+        agent,
+        content: action.slice(2).trim(),
+      }]);
+    } else if (action.startsWith('🎫 Created ticket')) {
+      const match = action.match(/Created ticket #(\d+): (.+)/);
+      if (match) {
+        setLiveTickets(prev => [...prev, {
+          id: `live-${Date.now()}-${ticketCounter.current++}`,
+          title: match[2],
+          priority: 'medium',
+          number: parseInt(match[1]),
+        }]);
+      }
+    } else if (action.startsWith('🧠 Wrote to memory: ')) {
+      const title = action.slice('🧠 Wrote to memory: '.length);
+      setLiveKnowledge(prev => [...prev, {
+        id: `live-${Date.now()}-${Math.random()}`,
+        title,
+        category: 'general',
+      }]);
+    } else if (action.startsWith('👤 Created position: ')) {
+      const match = action.match(/Created position: (.+) \((\w+)\)/);
+      if (match) {
+        setLivePositions(prev => [...prev, {
+          id: `live-${Date.now()}-${Math.random()}`,
+          title: match[1],
+          roleLevel: match[2],
+        }]);
+      }
+    }
+  }
+
+  // Merge server positions with live-created positions for org chart
+  const allPositions: Position[] = [
+    ...positions,
+    ...livePositions.map((lp, i) => ({
+      id: lp.id,
+      project_id: projectId,
+      title: lp.title,
+      description: null,
+      required_capabilities: null,
+      pay_rate_cents: null,
+      pay_type: 'fixed' as const,
+      max_agents: 1,
+      status: 'open' as const,
+      role_level: lp.roleLevel as Position['role_level'],
+      reports_to: null,
+      sort_order: positions.length + i,
+      system_prompt: null,
+      payment_status: 'unfunded' as const,
+      amount_earned_cents: 0,
+      created_at: new Date().toISOString(),
+    })),
+  ];
+
+  const totalPositions = allPositions.length;
+  const openPositions = allPositions.filter(p => p.status === 'open').length;
+  const ticketCount = initialTickets.length + liveTickets.length;
+  const hasMessages = initialMessages.length > 0 || liveChats.length > 0;
+  const hasTickets = initialTickets.length > 0 || liveTickets.length > 0;
+  const hasKnowledge = initialKnowledge.length > 0 || liveKnowledge.length > 0;
+
+  return (
+    <div className="max-w-6xl space-y-6">
+      {/* Quick Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatCard label="Positions" value={`${totalPositions - openPositions}/${totalPositions} filled`} />
+        <StatCard label="Open Roles" value={openPositions.toString()} />
+        <StatCard label="Tickets" value={ticketCount > 0 ? ticketCount.toString() : '—'} />
+        <StatCard label="Budget" value={project.budget_cents ? formatCents(project.budget_cents) : '—'} />
+      </div>
+
+      {/* Agent Simulation — owner only */}
+      {isOwner && (
+        <SimulationButton
+          projectId={projectId}
+          hasSimulated={hasSimulated}
+          onSimEvent={handleSimEvent}
+        />
+      )}
+
+      {/* Vision + GitHub */}
+      <section>
+        <h2 className="font-display text-xs font-medium text-secondary tracking-widest uppercase mb-3">Vision</h2>
+        <div className="card-glow p-4 rounded-md bg-surface border border-[var(--border)]">
+          <p className="text-sm whitespace-pre-wrap">{project.description}</p>
+          <div className="flex items-center gap-4 mt-3">
+            {project.deadline && (
+              <div className="flex items-center gap-1.5 text-xs text-muted">
+                <Calendar className="h-3.5 w-3.5" />
+                {new Date(project.deadline).toLocaleDateString()}
+              </div>
+            )}
+            {project.github_repo && (
+              <a
+                href={project.github_repo}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-xs text-accent hover:underline"
+              >
+                <Github className="h-3.5 w-3.5" />
+                {project.github_repo.replace('https://github.com/', '')}
+              </a>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* Two-column layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        {/* Left column — 60% */}
+        <div className="lg:col-span-3 space-y-6">
+          {/* Org Chart */}
+          <section>
+            <h2 className="font-display text-xs font-medium text-secondary tracking-widest uppercase mb-3">Organization</h2>
+            <OrgChartInteractive positions={allPositions} project={project} />
+          </section>
+
+          {/* Tickets */}
+          <section>
+            <SectionHeader title="Tickets" icon={<Ticket className="h-4 w-4" />} href={`/projects/${projectId}/tickets`} />
+            <div className="rounded-md bg-surface border border-[var(--border)]">
+              {hasTickets ? (
+                <div className="divide-y divide-[var(--border)]">
+                  {initialTickets.map((ticket) => (
+                    <TicketRow key={ticket.id} title={ticket.title} priority={ticket.priority} status={ticket.status} />
+                  ))}
+                  {liveTickets.map((ticket) => (
+                    <TicketRow key={ticket.id} title={ticket.title} priority={ticket.priority} status="todo" live />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted px-4 py-6 text-center">No tickets yet. Once a PM agent is hired, they&apos;ll create and assign tasks.</p>
+              )}
+            </div>
+          </section>
+        </div>
+
+        {/* Right column — 40% */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Chat Feed */}
+          <section>
+            <SectionHeader title="Chat" icon={<MessageSquare className="h-4 w-4" />} href={`/projects/${projectId}/chat`} />
+            <div className="rounded-md bg-surface border border-[var(--border)] p-4">
+              {hasMessages ? (
+                <div ref={chatRef} className="space-y-3 max-h-64 overflow-y-auto">
+                  {initialMessages.map((msg) => (
+                    <ChatMessage key={msg.id} message={msg} />
+                  ))}
+                  {liveChats.map((msg) => (
+                    <LiveChatBubble key={msg.id} agent={msg.agent} content={msg.content} />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted text-center py-4">No messages yet. Post a message to your team below.</p>
+              )}
+              {channelId && userId && (
+                <QuickChatInput
+                  channelId={channelId}
+                  projectId={projectId}
+                  userId={userId}
+                  onMessageSent={(msg) => setLiveChats(prev => [...prev, {
+                    id: `user-${Date.now()}`,
+                    agent: msg.author,
+                    content: msg.content,
+                  }])}
+                />
+              )}
+              {!channelId && (
+                <p className="text-xs text-muted text-center py-2 mt-2 border-t border-[var(--border)]">Chat channel not created yet.</p>
+              )}
+            </div>
+          </section>
+
+          {/* Memory Highlights */}
+          <section>
+            <SectionHeader title="Memory" icon={<Brain className="h-4 w-4" />} href={`/projects/${projectId}/memory`} />
+            <div className="space-y-2">
+              {hasKnowledge ? (
+                <>
+                  {initialKnowledge.map((entry) => (
+                    <KnowledgeCard key={entry.id} title={entry.title} category={entry.category} />
+                  ))}
+                  {liveKnowledge.map((entry) => (
+                    <KnowledgeCard key={entry.id} title={entry.title} category={entry.category} live />
+                  ))}
+                </>
+              ) : (
+                <div className="p-4 rounded-md bg-surface border border-[var(--border)]">
+                  <p className="text-xs text-muted text-center">No knowledge entries yet. Agents will document decisions, patterns, and architecture here.</p>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Tags */}
+          {project.tags && project.tags.length > 0 && (
+            <section>
+              <h2 className="font-display text-xs font-medium text-secondary tracking-widest uppercase mb-3">Tags</h2>
+              <div className="flex flex-wrap gap-2">
+                {project.tags.map((tag) => (
+                  <span key={tag} className="px-2 py-0.5 rounded text-xs bg-surface-light text-muted border border-[var(--border)]">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Sub-components ---
+
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="card-glow p-3 rounded-md bg-surface border border-[var(--border)]">
+      <p className="text-xs text-muted mb-1">{label}</p>
+      <p className="font-display text-sm font-medium">{value}</p>
+    </div>
+  );
+}
+
+function SectionHeader({ title, icon, href }: { title: string; icon: React.ReactNode; href: string }) {
+  return (
+    <div className="flex items-center justify-between mb-3">
+      <h2 className="font-display text-xs font-medium text-secondary tracking-widest uppercase flex items-center gap-2">
+        {icon} {title}
+      </h2>
+      <Link href={href} className="text-xs text-accent hover:underline">
+        View All
+      </Link>
+    </div>
+  );
+}
+
+function TicketRow({ title, priority, status, live }: { title: string; priority: string; status: string; live?: boolean }) {
+  return (
+    <div className={`flex items-center gap-3 px-4 py-2.5 ${live ? 'bg-accent/5' : ''}`}>
+      <Badge variant={
+        priority === 'urgent' ? 'error' :
+        priority === 'high' ? 'warning' :
+        priority === 'medium' ? 'accent' : 'default'
+      }>
+        {priority}
+      </Badge>
+      <span className="text-sm flex-1 truncate">{title}</span>
+      <Badge variant={
+        status === 'done' ? 'success' :
+        status === 'in_progress' || status === 'in_review' ? 'accent' : 'default'
+      }>
+        {TICKET_STATUS_LABELS[status as keyof typeof TICKET_STATUS_LABELS] || status}
+      </Badge>
+    </div>
+  );
+}
+
+function stripSim(name: string) {
+  return name.replace(/^SIM-/, '');
+}
+
+function ChatMessage({ message }: { message: Message }) {
+  const isAgent = !!message.author_agent_key_id;
+  const raw = message.author_user?.display_name || message.author_agent?.name || 'Unknown';
+  const authorName = stripSim(raw);
+
+  return (
+    <div className="flex gap-2">
+      <div className={`h-6 w-6 rounded-md flex items-center justify-center shrink-0 text-xs font-medium ${
+        isAgent ? 'bg-secondary/15 text-secondary' : 'bg-accent/15 text-accent'
+      }`}>
+        {authorName.charAt(0).toUpperCase()}
+      </div>
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-medium">{authorName}</span>
+          {isAgent && <span className="text-xs text-secondary">bot</span>}
+        </div>
+        <p className="text-sm text-muted">{message.content}</p>
+      </div>
+    </div>
+  );
+}
+
+function LiveChatBubble({ agent, content }: { agent: string; content: string }) {
+  return (
+    <div className="flex gap-2">
+      <div className="h-6 w-6 rounded-md flex items-center justify-center shrink-0 text-xs font-medium bg-secondary/15 text-secondary">
+        {agent.charAt(0).toUpperCase()}
+      </div>
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-medium">{agent}</span>
+          <span className="text-xs text-secondary">bot</span>
+        </div>
+        <p className="text-sm text-muted">{content}</p>
+      </div>
+    </div>
+  );
+}
+
+function KnowledgeCard({ title, category, live }: { title: string; category: string; live?: boolean }) {
+  return (
+    <div className={`p-3 rounded-md bg-surface border border-[var(--border)] ${live ? 'border-accent/20' : ''}`}>
+      <div className="flex items-center gap-2 mb-1">
+        <Badge>{category}</Badge>
+      </div>
+      <p className="text-sm truncate">{title}</p>
+    </div>
+  );
+}
