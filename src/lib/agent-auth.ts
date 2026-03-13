@@ -1,12 +1,27 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 
 // --- In-memory sliding window rate limiter ---
 const rateLimitStore = new Map<string, number[]>();
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
 const RATE_LIMIT_MAX_REQUESTS = 60;   // 60 req/min (1/sec avg, allows bursts)
 
+// Periodic cleanup to prevent memory leaks (every 5 minutes)
+let lastCleanup = Date.now();
+function cleanupRateLimitStore() {
+  const now = Date.now();
+  if (now - lastCleanup < 300_000) return; // 5 min
+  lastCleanup = now;
+  for (const [key, timestamps] of rateLimitStore.entries()) {
+    const recent = timestamps.filter(t => now - t < RATE_LIMIT_WINDOW_MS);
+    if (recent.length === 0) rateLimitStore.delete(key);
+    else rateLimitStore.set(key, recent);
+  }
+}
+
 function checkRateLimit(agentKeyId: string): { allowed: boolean; remaining: number; resetAt: number } {
+  cleanupRateLimitStore();
   const now = Date.now();
   const timestamps = rateLimitStore.get(agentKeyId) || [];
   const recent = timestamps.filter(t => now - t < RATE_LIMIT_WINDOW_MS);
@@ -18,6 +33,17 @@ function checkRateLimit(agentKeyId: string): { allowed: boolean; remaining: numb
     remaining: Math.max(0, RATE_LIMIT_MAX_REQUESTS - recent.length),
     resetAt: oldest + RATE_LIMIT_WINDOW_MS,
   };
+}
+
+/** Hash an API key with SHA-256 */
+export function hashApiKey(apiKey: string): string {
+  return crypto.createHash('sha256').update(apiKey).digest('hex');
+}
+
+/** Constant-time comparison to prevent timing attacks */
+function safeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
 
 export interface AgentContext {
@@ -66,10 +92,11 @@ export async function authenticateAgent(
     );
   }
 
-  const prefix = apiKey.slice(0, 8);
+  // Use the first 16 chars after "openpod_" as a unique prefix for DB lookup
+  const prefix = apiKey.slice(0, 16);
   const admin = createAdminClient();
 
-  // Look up by prefix, then verify hash
+  // Look up by prefix, then verify full hash
   const { data: keys, error } = await admin
     .from('agent_keys')
     .select('id, owner_id, name, api_key_hash, capabilities, registry_id, is_active')
@@ -83,8 +110,15 @@ export async function authenticateAgent(
     );
   }
 
-  // For MVP: match by prefix (in production, verify full hash with crypto.subtle)
-  const agentKey = keys[0];
+  // Verify full key hash (constant-time comparison to prevent timing attacks)
+  const keyHash = hashApiKey(apiKey);
+  const agentKey = keys.find(k => safeCompare(k.api_key_hash, keyHash));
+  if (!agentKey) {
+    return NextResponse.json(
+      { error: 'Invalid API key' },
+      { status: 401 }
+    );
+  }
 
   // Rate limit check
   const rateLimit = checkRateLimit(agentKey.id);

@@ -35,6 +35,28 @@ export async function POST(
 
   const admin = createAdminClient();
 
+  // Verify user is project owner
+  const { data: project } = await admin
+    .from('projects')
+    .select('id')
+    .eq('id', projectId)
+    .eq('owner_id', user.id)
+    .single();
+  if (!project) {
+    return NextResponse.json({ error: 'Not project owner' }, { status: 403 });
+  }
+
+  // Verify channel belongs to this project (prevent IDOR)
+  const { data: channel } = await admin
+    .from('channels')
+    .select('id')
+    .eq('id', channel_id)
+    .eq('project_id', projectId)
+    .single();
+  if (!channel) {
+    return NextResponse.json({ error: 'Channel not found in this project' }, { status: 404 });
+  }
+
   // Insert message via admin client (bypasses RLS)
   const { data: message, error: insertError } = await admin
     .from('messages')

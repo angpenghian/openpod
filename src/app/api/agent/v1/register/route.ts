@@ -1,9 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { hashApiKey } from '@/lib/agent-auth';
 import crypto from 'crypto';
+
+// IP-based registration rate limiter (5 per hour per IP)
+const registerRateLimits = new Map<string, number[]>();
+const REGISTER_WINDOW_MS = 3600_000; // 1 hour
+const REGISTER_MAX = 5;
+
+function checkRegistrationLimit(ip: string): boolean {
+  const now = Date.now();
+  const timestamps = registerRateLimits.get(ip) || [];
+  const recent = timestamps.filter(t => now - t < REGISTER_WINDOW_MS);
+  if (recent.length >= REGISTER_MAX) return false;
+  recent.push(now);
+  registerRateLimits.set(ip, recent);
+  return true;
+}
 
 // POST /api/agent/v1/register — Agent self-registration (no auth required)
 export async function POST(request: NextRequest) {
+  // Rate limit by IP
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+  if (!checkRegistrationLimit(ip)) {
+    return NextResponse.json(
+      { error: 'Too many registrations. Max 5 per hour.' },
+      { status: 429, headers: { 'Retry-After': '3600' } }
+    );
+  }
+
   let body: Record<string, unknown>;
   try {
     body = await request.json();
@@ -53,14 +78,12 @@ export async function POST(request: NextRequest) {
     slug = `${slug}-${crypto.randomUUID().slice(0, 6)}`;
   }
 
-  // Generate API key
+  // Generate API key with unique prefix (first 16 chars are the lookup prefix)
   const apiKey = `openpod_${crypto.randomUUID().replace(/-/g, '')}`;
-  const apiKeyPrefix = apiKey.slice(0, 8);
+  const apiKeyPrefix = apiKey.slice(0, 16);
+  const apiKeyHash = hashApiKey(apiKey);
 
-  // We need an owner_id for agent_keys. For self-registered agents,
-  // use a system user ID or create one. For MVP, use a placeholder.
-  // In production, this would be a dedicated system user.
-  // Check if there's a system user, if not, the first profile is the system owner.
+  // System owner for self-registered agents
   const { data: systemUser } = await admin
     .from('profiles')
     .select('id')
@@ -97,20 +120,21 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (regError || !registry) {
+    console.error('Agent registration failed:', regError);
     return NextResponse.json(
-      { error: 'Failed to create agent registry entry', details: regError?.message },
+      { error: 'Failed to create agent registry entry' },
       { status: 500 }
     );
   }
 
-  // 2. Create agent_keys entry (API auth)
+  // 2. Create agent_keys entry (API auth — stores SHA-256 hash, NOT plaintext)
   const { error: keyError } = await admin
     .from('agent_keys')
     .insert({
       owner_id: systemUser.id,
       name: name.trim(),
       api_key_prefix: apiKeyPrefix,
-      api_key_hash: apiKey,
+      api_key_hash: apiKeyHash,
       capabilities,
       registry_id: registry.id,
       is_active: true,
@@ -119,8 +143,9 @@ export async function POST(request: NextRequest) {
   if (keyError) {
     // Rollback registry entry
     await admin.from('agent_registry').delete().eq('id', registry.id);
+    console.error('API key creation failed:', keyError);
     return NextResponse.json(
-      { error: 'Failed to create API key', details: keyError.message },
+      { error: 'Failed to create API key' },
       { status: 500 }
     );
   }

@@ -62,9 +62,12 @@ export default async function BrowseProjectsPage({
     query = query.in('status', ['open', 'in_progress']);
   }
 
-  // Text search
+  // Text search (sanitize to prevent PostgREST filter injection)
   if (searchQuery) {
-    query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+    const sanitized = searchQuery.replace(/[.,%()]/g, '');
+    if (sanitized) {
+      query = query.or(`title.ilike.%${sanitized}%,description.ilike.%${sanitized}%`);
+    }
   }
 
   // Budget filter

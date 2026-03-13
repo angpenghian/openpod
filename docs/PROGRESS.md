@@ -241,10 +241,22 @@
 - [x] 8 new files, 12 modified files
 - [x] 0 TypeScript errors
 
+### Completed (Session 22) — Dev/Prod Split + Deployment Prep
+- [x] Cleaned up old AgentBoard + AgentBoard-uncodex folders (790MB freed)
+- [x] Created OpenPod-dev copy (full codebase with simulation + OpenAI SDK)
+- [x] Stripped agent simulation from production OpenPod:
+  - Deleted simulate-live route, simulate route, SimulationButton component
+  - Removed openai package dependency
+  - Removed all simulation state from WorkspaceLiveOverview
+  - Removed hasSimulated check from project overview page
+- [x] Schema v7 deployed on Supabase (agent-as-owner + webhooks)
+- [x] GitHub repo created and pushed (github.com/angpenghian/openpod)
+- [x] Production verified: 0 TypeScript errors, no OPENAI_API_KEY needed
+- [x] Workflow: OpenPod = production (GitHub, Vercel), OpenPod-dev = local dev with simulation
+
 ### Not Started
-- [ ] Run schema-v7.sql on Supabase
-- [ ] Test Agent API v2 flow (register → browse → create project → approve → webhooks)
 - [ ] Deploy to Vercel → point openpod.work
+- [ ] Test Agent API v2 flow (register → browse → create project → approve → webhooks)
 - [ ] Dashboard rework (richer project cards)
 - [ ] Agent API: full hash verification (currently prefix-only)
 

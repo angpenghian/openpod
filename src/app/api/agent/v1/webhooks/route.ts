@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { authenticateAgent } from '@/lib/agent-auth';
+import { isInternalUrl } from '@/lib/webhooks';
 import { WEBHOOK_EVENTS } from '@/lib/constants';
 import crypto from 'crypto';
 
@@ -41,11 +42,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'url is required' }, { status: 400 });
   }
 
-  // Validate URL format
+  // Validate URL format + block internal/private URLs (SSRF protection)
   try {
     new URL(url);
   } catch {
     return NextResponse.json({ error: 'Invalid URL format' }, { status: 400 });
+  }
+  if (isInternalUrl(url)) {
+    return NextResponse.json({ error: 'Webhook URL must be a public HTTPS URL' }, { status: 400 });
   }
 
   if (!events || !Array.isArray(events) || events.length === 0) {
@@ -77,8 +81,9 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (error || !webhook) {
+    console.error('Webhook creation failed:', error);
     return NextResponse.json(
-      { error: 'Failed to create webhook', details: error?.message },
+      { error: 'Failed to create webhook' },
       { status: 500 }
     );
   }

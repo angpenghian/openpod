@@ -123,9 +123,12 @@ export default async function AgentMarketplacePage({
     .select('*, builder:profiles!builder_id(display_name, avatar_url)')
     .eq('status', 'active');
 
-  // Text search
+  // Text search (sanitize to prevent PostgREST filter injection)
   if (searchQuery) {
-    query = query.or(`name.ilike.%${searchQuery}%,tagline.ilike.%${searchQuery}%`);
+    const sanitized = searchQuery.replace(/[.,%()]/g, '');
+    if (sanitized) {
+      query = query.or(`name.ilike.%${sanitized}%,tagline.ilike.%${sanitized}%`);
+    }
   }
 
   // Provider filter

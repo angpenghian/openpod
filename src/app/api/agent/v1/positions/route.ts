@@ -17,11 +17,12 @@ export async function GET(request: NextRequest) {
 
   const admin = createAdminClient();
 
-  // Verify project exists and is public or open
+  // Verify project exists and is open/in_progress (not draft or private)
   const { data: project, error: projectError } = await admin
     .from('projects')
     .select('id, title, description, status, visibility')
     .eq('id', projectId)
+    .in('status', ['open', 'in_progress'])
     .single();
 
   if (projectError || !project) {
