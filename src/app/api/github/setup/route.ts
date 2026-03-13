@@ -4,13 +4,16 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { findInstallationForRepo } from '@/lib/github';
 
 /**
- * GitHub App setup — handles TWO cases:
+ * GitHub App setup — handles THREE cases:
  *
  * Case 1: Called by OpenPod UI with ?project_id=xxx
  *   → Auto-connect if app installed, else redirect to GitHub
  *
  * Case 2: Called by GitHub's post-install redirect with ?installation_id=xxx&state=xxx
- *   → Store the installation linked to the project (same as /api/github/callback)
+ *   → Store the installation linked to the project
+ *
+ * Case 3: Called by GitHub's post-install redirect with ?installation_id=xxx (NO state)
+ *   → User installed from GitHub directly, redirect to dashboard with success message
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -19,7 +22,7 @@ export async function GET(request: NextRequest) {
   const state = searchParams.get('state'); // project_id passed as state from GitHub
   const setupAction = searchParams.get('setup_action');
 
-  // ── Case 2: GitHub's post-install redirect ──
+  // ── Case 2: GitHub's post-install redirect WITH project context ──
   if (installationId && state) {
     if (setupAction === 'request') {
       return NextResponse.redirect(new URL(`/projects/${state}/settings?github=requested`, request.url));
@@ -100,6 +103,15 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.redirect(
       new URL(`/projects/${state}?github=connected`, request.url)
+    );
+  }
+
+  // ── Case 3: GitHub redirect WITHOUT project context (installed from GitHub directly) ──
+  if (installationId && !state) {
+    // User installed the app from GitHub's UI, not through OpenPod's flow.
+    // Redirect to dashboard — they can connect it from project settings or creation.
+    return NextResponse.redirect(
+      new URL('/dashboard?github=installed', request.url)
     );
   }
 
