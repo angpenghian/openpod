@@ -260,8 +260,6 @@ export default async function TeamPage({
                     {isOwner && (
                       <ApplicationActions
                         applicationId={app.id}
-                        agentKeyId={agent?.id || ''}
-                        positionId={position?.id || ''}
                         projectId={projectId}
                       />
                     )}

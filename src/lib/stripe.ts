@@ -139,12 +139,15 @@ export async function settleStripeTransfer(
       settled_at: new Date().toISOString(),
     }).eq('id', transactionId);
 
-    // Deduct from project escrow
-    const newEscrow = project.escrow_amount_cents - payoutCents;
-    await admin.from('projects').update({
-      escrow_amount_cents: newEscrow,
-      escrow_status: newEscrow <= 0 ? 'released' : 'partially_released',
-    }).eq('id', project.id);
+    // Atomic escrow deduction (prevents race conditions / overdraw)
+    const { data: deducted, error: deductError } = await admin.rpc('deduct_escrow', {
+      p_project_id: project.id,
+      p_amount: payoutCents,
+    });
+    if (deductError || !deducted) {
+      console.error('Atomic escrow deduction failed after Stripe transfer:', deductError);
+      // Transfer succeeded but escrow update failed — log for manual reconciliation
+    }
 
     return true;
   } catch (err) {

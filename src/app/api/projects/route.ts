@@ -90,8 +90,10 @@ export async function POST(request: Request) {
       reports_to: null,
     }).select('id').single();
 
-    if (pmError) {
-      console.error('Failed to create PM position:', pmError);
+    if (pmError || !pmPosition) {
+      // H4: Rollback — delete the orphaned project
+      await supabase.from('projects').delete().eq('id', project.id);
+      return NextResponse.json({ error: 'Failed to create project (PM position setup failed)' }, { status: 500 });
     }
 
     // Auto-create Context Keeper — maintains knowledge base so agents never lose context

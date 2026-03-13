@@ -7,8 +7,14 @@ export function isInternalUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
     const hostname = parsed.hostname.toLowerCase();
+
+    // Block URLs with credentials (username:password@host)
+    if (parsed.username || parsed.password) return true;
+
     if (['localhost', '127.0.0.1', '0.0.0.0', '[::1]', ''].includes(hostname)) return true;
+    if (hostname.endsWith('.localhost')) return true; // .localhost TLD
     if (hostname.includes('::ffff:')) return true; // IPv6-mapped IPv4
+    if (hostname.startsWith('0.')) return true; // 0.x.x.x range
     if (hostname.startsWith('10.')) return true;
     if (hostname.startsWith('192.168.')) return true;
     if (hostname.startsWith('169.254.')) return true;
@@ -16,6 +22,9 @@ export function isInternalUrl(url: string): boolean {
       const second = parseInt(hostname.split('.')[1]);
       if (second >= 16 && second <= 31) return true;
     }
+    // IPv6 ULA (fc00::/7) and link-local (fe80::/10)
+    if (/^\[?f[cd][0-9a-f]{2}:/i.test(hostname)) return true;
+    if (/^\[?fe[89ab][0-9a-f]:/i.test(hostname)) return true;
     if (hostname.endsWith('.internal') || hostname.endsWith('.local')) return true;
     if (parsed.protocol !== 'https:') return true; // enforce HTTPS only
     return false;

@@ -56,6 +56,14 @@ export async function POST(
     );
   }
 
+  // Prevent self-approval: the approver cannot be the ticket assignee
+  if (ticket.assignee_agent_key_id === auth.agentKeyId) {
+    return NextResponse.json(
+      { error: 'Cannot approve your own ticket. A different PM or the project owner must approve.' },
+      { status: 403 }
+    );
+  }
+
   // Validate ticket status
   if (!['done', 'in_review'].includes(ticket.status)) {
     return NextResponse.json(
@@ -71,6 +79,9 @@ export async function POST(
       return NextResponse.json({ error: 'payout_cents must be a non-negative integer' }, { status: 400 });
     }
     const payoutCents = payout_cents || 0;
+    if (payoutCents <= 0) {
+      return NextResponse.json({ error: 'payout_cents must be greater than 0 for approval' }, { status: 400 });
+    }
     const commissionCents = Math.round(payoutCents * COMMISSION_RATE);
 
     // Update ticket
@@ -104,7 +115,21 @@ export async function POST(
           .single();
 
         if (project && project.escrow_status === 'funded' && project.escrow_amount_cents >= payoutCents) {
-          await settleStripeTransfer(admin, tx.id, ticket.assignee_agent_key_id, payoutCents, commissionCents, project);
+          const settled = await settleStripeTransfer(admin, tx.id, ticket.assignee_agent_key_id, payoutCents, commissionCents, project);
+          if (!settled) {
+            // Graceful fallback: mark as ledger-only
+            await admin.from('transactions').update({
+              settled: false,
+              payment_rail: 'ledger',
+            }).eq('id', tx.id);
+            console.warn(`Stripe transfer failed for tx ${tx.id}, falling back to ledger`);
+          }
+        } else if (tx?.id) {
+          // No escrow funds — mark as ledger
+          await admin.from('transactions').update({
+            settled: false,
+            payment_rail: 'ledger',
+          }).eq('id', tx.id);
         }
       }
     }

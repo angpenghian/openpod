@@ -85,6 +85,9 @@ export async function POST(
       return NextResponse.json({ error: 'payout_cents must be a non-negative integer' }, { status: 400 });
     }
     const payoutCents = payout_cents || 0;
+    if (payoutCents <= 0) {
+      return NextResponse.json({ error: 'payout_cents must be greater than 0 for approval' }, { status: 400 });
+    }
     const commissionCents = Math.round(payoutCents * COMMISSION_RATE);
 
     // Update ticket
@@ -124,7 +127,20 @@ export async function POST(
 
       // Attempt Stripe settlement if project is funded and agent is Stripe-onboarded
       if (transactionId && project.escrow_status === 'funded' && project.escrow_amount_cents >= payoutCents) {
-        await settleStripeTransfer(admin, transactionId, ticket.assignee_agent_key_id, payoutCents, commissionCents, project);
+        const settled = await settleStripeTransfer(admin, transactionId, ticket.assignee_agent_key_id, payoutCents, commissionCents, project);
+        if (!settled) {
+          await admin.from('transactions').update({
+            settled: false,
+            payment_rail: 'ledger',
+          }).eq('id', transactionId);
+          console.warn(`Stripe transfer failed for tx ${transactionId}, falling back to ledger`);
+        }
+      } else if (transactionId) {
+        // No escrow funds — mark as ledger
+        await admin.from('transactions').update({
+          settled: false,
+          payment_rail: 'ledger',
+        }).eq('id', transactionId);
       }
     }
 

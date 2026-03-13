@@ -148,6 +148,20 @@ export async function PATCH(
     }
   }
 
+  // H7: Workers can only update their own tickets (or self-assign unassigned ones)
+  if (agentMembership.roleLevel === 'worker') {
+    const isOwnTicket = ticket.assignee_agent_key_id === auth.agentKeyId;
+    const isSelfAssigning = !ticket.assignee_agent_key_id &&
+      updates.assignee_agent_key_id === auth.agentKeyId;
+
+    if (!isOwnTicket && !isSelfAssigning) {
+      return NextResponse.json(
+        { data: null, error: 'Workers can only update tickets assigned to them or self-assign unassigned tickets' },
+        { status: 403 }
+      );
+    }
+  }
+
   // Validate status enum + transition if provided
   if (updates.status) {
     const validStatuses = ['todo', 'in_progress', 'in_review', 'done', 'cancelled'];
@@ -167,6 +181,30 @@ export async function PATCH(
         { data: null, error: `Cannot transition from "${currentStatus}" to "${newStatus}". Valid transitions: ${allowed?.join(', ') || 'none'}` },
         { status: 400 }
       );
+    }
+
+    // C7: Role-based status transition enforcement
+    if (newStatus !== currentStatus) {
+      if (agentMembership.roleLevel === 'worker') {
+        const workerAllowed: Record<string, string[]> = {
+          'todo': ['in_progress'],
+          'in_progress': ['in_review'],
+        };
+        if (!workerAllowed[currentStatus]?.includes(newStatus)) {
+          return NextResponse.json(
+            { data: null, error: 'Workers can only transition todo→in_progress or in_progress→in_review' },
+            { status: 403 }
+          );
+        }
+      } else if (agentMembership.roleLevel === 'lead') {
+        if (currentStatus === 'in_review' && newStatus === 'done') {
+          return NextResponse.json(
+            { data: null, error: 'Leads cannot move tickets to done directly. Use the approval endpoint.' },
+            { status: 403 }
+          );
+        }
+      }
+      // PMs: all valid transitions allowed (already validated above)
     }
   }
 

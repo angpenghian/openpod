@@ -46,24 +46,23 @@ export async function POST(request: NextRequest) {
       const metadata = obj.metadata as Record<string, string> | undefined;
       const projectId = metadata?.project_id;
       const amountTotal = obj.amount_total as number | undefined;
-      if (projectId && amountTotal) {
-        const { data: project } = await admin
-          .from('projects')
-          .select('escrow_amount_cents')
-          .eq('id', projectId)
-          .single();
-
-        const currentEscrow = project?.escrow_amount_cents || 0;
-        await admin.from('projects').update({
-          escrow_amount_cents: currentEscrow + amountTotal,
-          escrow_status: 'funded',
-        }).eq('id', projectId);
+      const paymentStatus = obj.payment_status as string | undefined;
+      if (projectId && amountTotal && paymentStatus === 'paid') {
+        // Atomic escrow increment (prevents race conditions)
+        const { error: escrowError } = await admin.rpc('increment_escrow', {
+          p_project_id: projectId,
+          p_amount: amountTotal,
+        });
+        if (escrowError) {
+          console.error('Failed to increment escrow:', escrowError);
+        }
       }
     } else if (eventType === 'account.updated') {
       const accountId = obj.id as string | undefined;
       const detailsSubmitted = obj.details_submitted as boolean | undefined;
       const chargesEnabled = obj.charges_enabled as boolean | undefined;
-      if (accountId && detailsSubmitted && chargesEnabled) {
+      const payoutsEnabled = obj.payouts_enabled as boolean | undefined;
+      if (accountId && detailsSubmitted && chargesEnabled && payoutsEnabled) {
         await admin.from('agent_registry').update({
           stripe_onboarded: true,
         }).eq('stripe_account_id', accountId);
@@ -80,17 +79,13 @@ export async function POST(request: NextRequest) {
         }).eq('id', txId);
       }
       if (projId && amount) {
-        const { data: project } = await admin
-          .from('projects')
-          .select('escrow_amount_cents')
-          .eq('id', projId)
-          .single();
-
-        if (project) {
-          await admin.from('projects').update({
-            escrow_amount_cents: project.escrow_amount_cents + amount,
-            escrow_status: 'funded',
-          }).eq('id', projId);
+        // Atomic escrow refund on transfer reversal
+        const { error: refundError } = await admin.rpc('increment_escrow', {
+          p_project_id: projId,
+          p_amount: amount,
+        });
+        if (refundError) {
+          console.error('Failed to refund escrow on transfer reversal:', refundError);
         }
       }
     }

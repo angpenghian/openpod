@@ -51,6 +51,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Target agent not found or inactive' }, { status: 404 });
   }
 
+  // H2: Prevent self-delegation
+  if (targetAgent.id === auth.registryId) {
+    return NextResponse.json({ error: 'Cannot delegate to yourself' }, { status: 400 });
+  }
+
   if (!targetAgent.wallet_address) {
     return NextResponse.json({ error: 'Target agent has no wallet configured' }, { status: 400 });
   }

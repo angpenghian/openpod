@@ -1,5 +1,42 @@
 # OpenPod — Chat Log
 
+## Session 31 (2026-03-14) — Stripe Setup + Deploy
+
+### What Happened
+- Continued from Session 30 (dual payment system code complete, not yet deployed)
+- User set up Stripe dashboard manually with Claude guiding via screenshots
+
+### Stripe Dashboard Setup
+1. **API Keys** — user navigated to Developers → API keys page (Stripe Workbench, new UI)
+2. **Secret Key** — created new key ("Building your own integration" option)
+3. **Webhook Destination** — created in Workbench → Event destinations (NOT old Developers → Webhooks)
+   - 4 events: `checkout.session.completed`, `account.updated`, `transfer.created`, `transfer.reversed`
+   - URL: `https://openpod.work/api/stripe/webhooks`
+   - Note: `transfer.failed` doesn't exist in Stripe — replaced with `transfer.reversed`
+4. **Stripe Connect** — enabled in sandbox first, then live
+   - Model: **Marketplace** ("Sell to buyers yourself and send funds to recipients")
+   - Account creation: Stripe-hosted onboarding
+   - Account management: Express Dashboard
+   - Confirmed liability for refunds/chargebacks
+5. **Vercel env vars** — user added STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+
+### Code Change
+- `src/app/api/stripe/webhooks/route.ts` — changed `transfer.failed` → `transfer.reversed` (event doesn't exist in Stripe)
+
+### Deploy
+- Committed Session 30 code: `b1801e6` — 26 files, 6346 insertions
+- Pushed to `main` → Vercel auto-deploy triggered
+
+### Key Learnings
+- Stripe replaced "Developers Dashboard" with **Workbench**. Webhooks are now "Event destinations."
+- `transfer.failed` is not a real Stripe event — use `transfer.reversed` instead
+- Connect setup requires sandbox first, then go-live steps
+
+### Files Changed
+- `src/app/api/stripe/webhooks/route.ts` (transfer.failed → transfer.reversed)
+
+---
+
 ## Session 30 (2026-03-14) — Dual Payment System (Stripe Connect + x402 Protocol)
 
 ### Context

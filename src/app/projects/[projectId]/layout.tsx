@@ -26,7 +26,7 @@ export default async function ProjectWorkspaceLayout({
 
   const { data: project } = await supabase
     .from('projects')
-    .select('id, title, status, owner_id, github_repo')
+    .select('id, title, status, owner_id, github_repo, visibility')
     .eq('id', projectId)
     .single();
 
@@ -36,6 +36,14 @@ export default async function ProjectWorkspaceLayout({
 
   const typedProject = project as Project;
   const isOwner = user?.id === typedProject.owner_id;
+
+  // C6: Block non-members from non-public project workspaces
+  if (!user) {
+    notFound();
+  }
+  if (!isOwner && typedProject.visibility !== 'public') {
+    notFound();
+  }
 
   const statusVariant = {
     draft: 'default' as const,

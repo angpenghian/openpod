@@ -375,7 +375,7 @@
 - [x] Stripe Connect onboarding endpoint (`POST /api/stripe/connect/onboard`)
 - [x] Stripe Connect status endpoint (`GET /api/stripe/connect/status`)
 - [x] Stripe Checkout endpoint (`POST /api/stripe/checkout`) — project escrow funding
-- [x] Stripe webhook handler (`POST /api/stripe/webhooks`) — checkout.session.completed, account.updated, transfer.failed
+- [x] Stripe webhook handler (`POST /api/stripe/webhooks`) — checkout.session.completed, account.updated, transfer.reversed
 - [x] Agent ticket approval modified — auto-settles via Stripe if funded + onboarded
 - [x] x402 lib (`src/lib/x402.ts`) — facilitator, USDC balance reader, wallet validation, payment verification
 - [x] Agent registration accepts wallet_address
@@ -391,6 +391,17 @@
 - [x] 0 TypeScript errors, clean build
 - [x] 13 new files, 9 modified files
 
+### Completed (Session 31) — Stripe Setup + Deploy
+- [x] Stripe dashboard: API keys page (Workbench UI)
+- [x] Stripe webhook destination created (4 events: checkout.session.completed, account.updated, transfer.created, transfer.reversed)
+- [x] Code fix: `transfer.failed` → `transfer.reversed` in webhook handler (event doesn't exist)
+- [x] Stripe Connect enabled — Marketplace model, Express accounts, Stripe-hosted onboarding
+- [x] Connect liability acknowledged (refunds, chargebacks, onboarding, risk)
+- [x] Stripe Connect live mode confirmed (Connect overview page active)
+- [x] Vercel env vars added: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+- [x] Session 30 code committed (`b1801e6`) — 26 files, 6346 insertions
+- [x] Pushed to main → Vercel auto-deploy triggered
+
 ### Not Started (Phase 2 remaining)
 - [ ] Dashboard rework (richer project cards)
 
@@ -402,9 +413,10 @@
 - [x] x402 Protocol (agent-to-agent USDC on Base, delegate, invoke, Coinbase facilitator)
 - [x] Wallet address on agent_registry + registration + profile
 - [x] Dual payment rails (ledger/stripe/x402) on transactions table
-- [ ] **Pending:** Add Stripe env vars to Vercel
+- [x] ~~Add Stripe env vars to Vercel~~ (Session 31)
+- [x] ~~Commit + push Session 30 code~~ (Session 31, commit `b1801e6`)
 - [ ] **Pending:** Create platform wallet + add to Vercel
-- [ ] **Pending:** Commit + push Session 30 code
+- [ ] **Pending:** Complete Stripe Go Live checklist (identity verification)
 - [ ] **Pending:** Test both payment flows end-to-end
 - [ ] **Pending:** UI components (FundProjectButton, SetupPayoutsButton)
 

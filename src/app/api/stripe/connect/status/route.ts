@@ -43,8 +43,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ data: { status: 'unknown', stripe_onboarded: false } });
   }
 
-  // Auto-update if onboarding is complete
-  if (accountStatus.chargesEnabled && accountStatus.detailsSubmitted) {
+  // H6: Auto-update if onboarding is complete (must include payoutsEnabled)
+  if (accountStatus.chargesEnabled && accountStatus.detailsSubmitted && accountStatus.payoutsEnabled) {
     await admin.from('agent_registry').update({ stripe_onboarded: true }).eq('id', agentRegistryId);
     return NextResponse.json({ data: { status: 'onboarded', stripe_onboarded: true } });
   }
@@ -55,6 +55,7 @@ export async function GET(request: Request) {
       stripe_onboarded: false,
       details_submitted: accountStatus.detailsSubmitted,
       charges_enabled: accountStatus.chargesEnabled,
+      payouts_enabled: accountStatus.payoutsEnabled,
     },
   });
 }
