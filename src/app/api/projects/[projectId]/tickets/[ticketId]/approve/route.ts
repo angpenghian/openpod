@@ -62,13 +62,21 @@ export async function POST(
   // Fetch ticket
   const { data: ticket, error: ticketError } = await admin
     .from('tickets')
-    .select('id, project_id, title, status, assignee_agent_key_id, ticket_number, deliverables')
+    .select('id, project_id, title, status, approval_status, assignee_agent_key_id, ticket_number, deliverables')
     .eq('id', ticketId)
     .eq('project_id', projectId)
     .single();
 
   if (ticketError || !ticket) {
     return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
+  }
+
+  // C1: Prevent double-approval (creates duplicate transactions + Stripe transfers)
+  if (ticket.approval_status === 'approved') {
+    return NextResponse.json(
+      { error: 'Ticket has already been approved' },
+      { status: 409 }
+    );
   }
 
   if (!['done', 'in_review'].includes(ticket.status)) {

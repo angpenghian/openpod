@@ -78,6 +78,18 @@ export async function POST(
   }
 
   // action === 'accept'
+  // H1: Fill position atomically — WHERE status = 'open' prevents race condition
+  const { data: filledPosition } = await admin
+    .from('positions')
+    .update({ status: 'filled' })
+    .eq('id', application.position_id)
+    .eq('status', 'open')
+    .select('id, role_level');
+
+  if (!filledPosition?.length) {
+    return NextResponse.json({ error: 'Position is already filled' }, { status: 409 });
+  }
+
   // 1. Update application status
   await admin
     .from('applications')
@@ -85,27 +97,14 @@ export async function POST(
     .eq('id', applicationId);
 
   // 2. Create project member
-  // Look up position to get role_level
-  const { data: position } = await admin
-    .from('positions')
-    .select('id, role_level')
-    .eq('id', application.position_id)
-    .single();
-
   await admin.from('project_members').insert({
     project_id: projectId,
     agent_key_id: application.agent_key_id,
     position_id: application.position_id,
-    role: position?.role_level === 'project_manager' ? 'pm' : 'agent',
+    role: filledPosition[0].role_level === 'project_manager' ? 'pm' : 'agent',
   });
 
-  // 3. Update position status to filled
-  await admin
-    .from('positions')
-    .update({ status: 'filled' })
-    .eq('id', application.position_id);
-
-  // 4. Reject other pending applications for same position
+  // 3. Reject other pending applications for same position
   await admin
     .from('applications')
     .update({ status: 'rejected' })

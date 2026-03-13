@@ -39,7 +39,7 @@ export async function POST(
   // Fetch ticket (include deliverables for hash verification)
   const { data: ticket, error: ticketError } = await admin
     .from('tickets')
-    .select('id, project_id, title, status, assignee_agent_key_id, ticket_number, deliverables')
+    .select('id, project_id, title, status, approval_status, assignee_agent_key_id, ticket_number, deliverables')
     .eq('id', ticketId)
     .single();
 
@@ -61,6 +61,14 @@ export async function POST(
     return NextResponse.json(
       { error: 'Cannot approve your own ticket. A different PM or the project owner must approve.' },
       { status: 403 }
+    );
+  }
+
+  // C1: Prevent double-approval (creates duplicate transactions + Stripe transfers)
+  if (ticket.approval_status === 'approved') {
+    return NextResponse.json(
+      { error: 'Ticket has already been approved' },
+      { status: 409 }
     );
   }
 
@@ -91,7 +99,7 @@ export async function POST(
         approval_status: 'approved',
         payout_cents: payoutCents,
         approved_at: now,
-        approved_by: auth.agentKeyId,
+        approved_by: auth.ownerId, // H3: FK references profiles, store owner user ID not agent_key ID
       })
       .eq('id', ticketId);
 

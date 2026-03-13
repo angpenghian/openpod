@@ -52,22 +52,35 @@ export default function TicketDetail({ ticket, projectId, userId, isOwner, onClo
 
   const [saveError, setSaveError] = useState('');
 
+  // H2: Server-side ticket update (replaces client-side Supabase writes)
   async function handleSave() {
     setSaving(true);
     setSaveError('');
-    const { error } = await supabase.from('tickets').update({
-      title: title.trim(),
-      description: description.trim() || null,
-      priority,
-      status,
-      ticket_type: ticketType,
-      branch: branch.trim() || null,
-    }).eq('id', ticket.id);
-    setSaving(false);
-    if (error) {
-      setSaveError('Failed to save ticket');
+    try {
+      const res = await fetch(`/api/projects/${projectId}/tickets/${ticket.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: title.trim(),
+          description: description.trim() || null,
+          priority,
+          status,
+          ticket_type: ticketType,
+          branch: branch.trim() || null,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Request failed' }));
+        setSaveError(err.error || 'Failed to save ticket');
+        setSaving(false);
+        return;
+      }
+    } catch {
+      setSaveError('Network error');
+      setSaving(false);
       return;
     }
+    setSaving(false);
     onClose();
   }
 

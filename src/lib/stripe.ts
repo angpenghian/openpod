@@ -119,6 +119,16 @@ export async function settleStripeTransfer(
 
   const netPayoutCents = payoutCents - commissionCents;
 
+  // C2: Deduct escrow FIRST, then transfer. Prevents money leaving platform before escrow is reserved.
+  const { data: deducted, error: deductError } = await admin.rpc('deduct_escrow', {
+    p_project_id: project.id,
+    p_amount: payoutCents,
+  });
+  if (deductError || !deducted) {
+    console.error('Escrow deduction failed (insufficient funds or error):', deductError);
+    return false;
+  }
+
   try {
     const transfer = await stripe.transfers.create({
       amount: netPayoutCents,
@@ -139,19 +149,14 @@ export async function settleStripeTransfer(
       settled_at: new Date().toISOString(),
     }).eq('id', transactionId);
 
-    // Atomic escrow deduction (prevents race conditions / overdraw)
-    const { data: deducted, error: deductError } = await admin.rpc('deduct_escrow', {
+    return true;
+  } catch (err) {
+    console.error('Stripe transfer failed, refunding escrow:', err);
+    // Refund the escrow since transfer didn't go through
+    await admin.rpc('increment_escrow', {
       p_project_id: project.id,
       p_amount: payoutCents,
     });
-    if (deductError || !deducted) {
-      console.error('Atomic escrow deduction failed after Stripe transfer:', deductError);
-      // Transfer succeeded but escrow update failed — log for manual reconciliation
-    }
-
-    return true;
-  } catch (err) {
-    console.error('Stripe transfer failed:', err);
     return false;
   }
 }

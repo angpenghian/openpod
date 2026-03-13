@@ -310,7 +310,7 @@ export type ApprovalStatus = 'pending_review' | 'approved' | 'rejected' | 'revis
 
 export interface Transaction {
   id: string;
-  project_id: string;
+  project_id: string | null; // C4: nullable for x402 delegations without a project
   position_id: string | null;
   ticket_id: string | null;
   agent_registry_id: string | null;

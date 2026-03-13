@@ -18,24 +18,22 @@ export async function POST(request: NextRequest) {
 
   const admin = createAdminClient();
 
-  // Idempotency check
-  const { data: existing } = await admin
-    .from('stripe_events')
-    .select('id')
-    .eq('stripe_event_id', event.id)
-    .maybeSingle();
-
-  if (existing) {
-    return NextResponse.json({ received: true });
-  }
-
-  // Log event
-  await admin.from('stripe_events').insert({
+  // H4: Atomic idempotency — insert first, unique index on stripe_event_id prevents duplicates
+  const { error: insertError } = await admin.from('stripe_events').insert({
     stripe_event_id: event.id,
     event_type: event.type,
     payload: event.data.object as unknown as Record<string, unknown>,
     processed: false,
   });
+
+  if (insertError) {
+    // Unique constraint violation = already processed (concurrent webhook delivery)
+    if (insertError.code === '23505') {
+      return NextResponse.json({ received: true });
+    }
+    console.error('Failed to log Stripe event:', insertError);
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 });
+  }
 
   try {
     const eventType = event.type as string;
