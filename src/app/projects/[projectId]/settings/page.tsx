@@ -1,19 +1,18 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter, useParams, useSearchParams } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import Button from '@/components/UI/Button';
 import Input from '@/components/UI/Input';
 import TextArea from '@/components/UI/TextArea';
 import Spinner from '@/components/UI/Spinner';
-import { Trash2, Github, CheckCircle, XCircle, ExternalLink } from 'lucide-react';
+import { Trash2, Github, CheckCircle, XCircle, ExternalLink, RefreshCw } from 'lucide-react';
 import type { Project, GitHubInstallation } from '@/types';
 
 export default function ProjectSettingsPage() {
   const router = useRouter();
   const params = useParams();
-  const searchParams = useSearchParams();
   const projectId = params.projectId as string;
   const supabase = createClient();
 
@@ -25,6 +24,8 @@ export default function ProjectSettingsPage() {
   const [success, setSuccess] = useState('');
   const [githubInstallation, setGithubInstallation] = useState<GitHubInstallation | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [githubMessage, setGithubMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -32,9 +33,6 @@ export default function ProjectSettingsPage() {
   const [budgetDollars, setBudgetDollars] = useState('');
   const [deadline, setDeadline] = useState('');
   const [githubRepo, setGithubRepo] = useState('');
-
-  // Handle GitHub callback status
-  const githubStatus = searchParams.get('github');
 
   useEffect(() => {
     async function loadProject() {
@@ -126,8 +124,47 @@ export default function ProjectSettingsPage() {
     }
   }
 
-  function handleInstallGitHub() {
-    window.location.href = `/api/github/setup?project_id=${projectId}`;
+  async function handleConnectGitHub() {
+    setConnecting(true);
+    setGithubMessage(null);
+
+    try {
+      const res = await fetch('/api/github/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: projectId }),
+      });
+
+      const data = await res.json();
+
+      if (data.connected) {
+        // Reload installation data
+        const { data: installation } = await supabase
+          .from('github_installations')
+          .select('*')
+          .eq('project_id', projectId)
+          .eq('is_active', true)
+          .single();
+
+        if (installation) {
+          setGithubInstallation(installation as GitHubInstallation);
+        }
+        setGithubMessage({ type: 'success', text: `Connected to ${data.repo}` });
+      } else if (data.install_url) {
+        setGithubMessage({
+          type: 'info',
+          text: data.message,
+        });
+        // Open GitHub App install page in a new tab
+        window.open(data.install_url, '_blank');
+      } else {
+        setGithubMessage({ type: 'error', text: data.error || 'Failed to connect' });
+      }
+    } catch {
+      setGithubMessage({ type: 'error', text: 'Connection failed. Check your repo URL and try again.' });
+    }
+
+    setConnecting(false);
   }
 
   async function handleDisconnectGitHub() {
@@ -138,6 +175,7 @@ export default function ProjectSettingsPage() {
       .update({ is_active: false })
       .eq('project_id', projectId);
     setGithubInstallation(null);
+    setGithubMessage(null);
     setDisconnecting(false);
   }
 
@@ -193,15 +231,13 @@ export default function ProjectSettingsPage() {
             <h3 className="text-sm font-medium">GitHub App Integration</h3>
           </div>
 
-          {githubStatus === 'connected' && !githubInstallation && (
-            <p className="text-sm text-success bg-success/10 rounded-md px-3 py-2 mb-3">
-              GitHub App connected successfully. Reload to see details.
-            </p>
-          )}
-
-          {githubStatus === 'requested' && (
-            <p className="text-sm text-warning bg-warning/10 rounded-md px-3 py-2 mb-3">
-              Installation requested. Waiting for organization admin approval.
+          {githubMessage && (
+            <p className={`text-sm rounded-md px-3 py-2 mb-3 ${
+              githubMessage.type === 'success' ? 'text-success bg-success/10' :
+              githubMessage.type === 'error' ? 'text-error bg-error/10' :
+              'text-secondary bg-secondary/10'
+            }`}>
+              {githubMessage.text}
             </p>
           )}
 
@@ -224,7 +260,7 @@ export default function ProjectSettingsPage() {
                     <ExternalLink className="h-3 w-3" />
                   </a>
                 </p>
-                <p>Installed: {new Date(githubInstallation.installed_at).toLocaleDateString()}</p>
+                <p>Connected: {new Date(githubInstallation.installed_at).toLocaleDateString()}</p>
               </div>
               <p className="text-xs text-muted">
                 Agents can request scoped tokens via <code className="text-secondary">GET /api/agent/v1/github/token</code>
@@ -244,12 +280,20 @@ export default function ProjectSettingsPage() {
                 <span className="text-sm text-muted">Not connected</span>
               </div>
               <p className="text-xs text-muted">
-                Install the OpenPod GitHub App to give agents scoped access to push code, create PRs, and verify deliverables.
+                Connect your GitHub repo so agents can push code, create PRs, and verify deliverables.
               </p>
-              <Button variant="secondary" onClick={handleInstallGitHub} className="text-sm">
-                <Github className="h-4 w-4 mr-1.5" />
-                Install GitHub App
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={handleConnectGitHub} loading={connecting} className="text-sm">
+                  <Github className="h-4 w-4 mr-1.5" />
+                  Connect GitHub
+                </Button>
+                {githubMessage?.type === 'info' && (
+                  <Button variant="secondary" onClick={handleConnectGitHub} loading={connecting} className="text-sm">
+                    <RefreshCw className="h-4 w-4 mr-1.5" />
+                    Check Again
+                  </Button>
+                )}
+              </div>
             </div>
           )}
         </div>

@@ -1,12 +1,22 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/UI/Button';
 import Input from '@/components/UI/Input';
 import TextArea from '@/components/UI/TextArea';
-import { ArrowLeft, X, Rocket, Bot } from 'lucide-react';
+import { ArrowLeft, X, Rocket, Bot, Github, ExternalLink, Lock, ChevronDown } from 'lucide-react';
 import Link from 'next/link';
+
+interface GithubRepo {
+  full_name: string;
+  name: string;
+  owner: string;
+  url: string;
+  private: boolean;
+  description: string | null;
+  installation_id: number;
+}
 
 export default function CreateProjectPage() {
   const router = useRouter();
@@ -20,7 +30,30 @@ export default function CreateProjectPage() {
   const [tagInput, setTagInput] = useState('');
   const [budgetDollars, setBudgetDollars] = useState('');
   const [deadline, setDeadline] = useState('');
-  const [githubRepo, setGithubRepo] = useState('');
+
+  // GitHub repo picker
+  const [repos, setRepos] = useState<GithubRepo[]>([]);
+  const [selectedRepo, setSelectedRepo] = useState<GithubRepo | null>(null);
+  const [githubInstalled, setGithubInstalled] = useState<boolean | null>(null);
+  const [githubInstallUrl, setGithubInstallUrl] = useState('');
+  const [loadingRepos, setLoadingRepos] = useState(true);
+  const [repoDropdownOpen, setRepoDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    async function loadRepos() {
+      try {
+        const res = await fetch('/api/github/repos');
+        const data = await res.json();
+        setRepos(data.repos || []);
+        setGithubInstalled(data.installed);
+        setGithubInstallUrl(data.install_url || '');
+      } catch {
+        setGithubInstalled(false);
+      }
+      setLoadingRepos(false);
+    }
+    loadRepos();
+  }, []);
 
   function addTag() {
     const trimmed = tagInput.trim().toLowerCase();
@@ -51,7 +84,7 @@ export default function CreateProjectPage() {
           budget_cents: budgetDollars ? Math.round(parseFloat(budgetDollars) * 100) : null,
           tags,
           deadline: deadline || null,
-          github_repo: githubRepo || null,
+          github_repo: selectedRepo ? selectedRepo.url : null,
         }),
       });
 
@@ -62,9 +95,14 @@ export default function CreateProjectPage() {
 
       const project = await response.json();
 
-      // If user entered a GitHub repo, redirect to install the GitHub App
-      if (githubRepo.trim()) {
-        window.location.href = `/api/github/setup?project_id=${project.id}`;
+      // Auto-connect GitHub if a repo was selected
+      if (selectedRepo) {
+        await fetch('/api/github/connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project_id: project.id }),
+        });
+        router.push(`/projects/${project.id}?github=connected`);
       } else {
         router.push(`/projects/${project.id}`);
       }
@@ -114,6 +152,110 @@ export default function CreateProjectPage() {
             required
           />
 
+          {/* GitHub Repo Picker */}
+          <div>
+            <label className="text-sm text-muted mb-2 block">GitHub Repository</label>
+
+            {loadingRepos ? (
+              <div className="p-3 rounded-md bg-surface border border-[var(--border)] text-sm text-muted">
+                Loading repos...
+              </div>
+            ) : githubInstalled === false ? (
+              <div className="p-3 rounded-md bg-surface border border-[var(--border)] space-y-2">
+                <p className="text-sm text-muted">Install the OpenPod GitHub App to connect a repo.</p>
+                <a
+                  href={githubInstallUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-sm text-accent hover:underline"
+                >
+                  <Github className="h-4 w-4" />
+                  Install GitHub App
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => { setLoadingRepos(true); fetch('/api/github/repos').then(r => r.json()).then(d => { setRepos(d.repos || []); setGithubInstalled(d.installed); setGithubInstallUrl(d.install_url || ''); setLoadingRepos(false); }); }}
+                  className="block text-xs text-muted hover:text-foreground cursor-pointer"
+                >
+                  Installed? Click to refresh
+                </button>
+              </div>
+            ) : repos.length === 0 ? (
+              <div className="p-3 rounded-md bg-surface border border-[var(--border)] space-y-2">
+                <p className="text-sm text-muted">No repos found. Add repos to the GitHub App.</p>
+                <a
+                  href={githubInstallUrl || `https://github.com/apps/${process.env.NEXT_PUBLIC_GITHUB_APP_SLUG || 'openpod-work'}/installations/new`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-sm text-accent hover:underline"
+                >
+                  <Github className="h-4 w-4" />
+                  Configure GitHub App
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => { setLoadingRepos(true); fetch('/api/github/repos').then(r => r.json()).then(d => { setRepos(d.repos || []); setGithubInstalled(d.installed); setGithubInstallUrl(d.install_url || ''); setLoadingRepos(false); }); }}
+                  className="block text-xs text-muted hover:text-foreground cursor-pointer"
+                >
+                  Added repos? Click to refresh
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setRepoDropdownOpen(!repoDropdownOpen)}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-md bg-surface border border-[var(--border)] hover:border-accent/20 text-sm cursor-pointer"
+                >
+                  {selectedRepo ? (
+                    <span className="flex items-center gap-2">
+                      <Github className="h-4 w-4 text-foreground" />
+                      <span className="text-foreground">{selectedRepo.full_name}</span>
+                      {selectedRepo.private && <Lock className="h-3 w-3 text-muted" />}
+                    </span>
+                  ) : (
+                    <span className="text-muted">Select a repository</span>
+                  )}
+                  <ChevronDown className={`h-4 w-4 text-muted transition-transform ${repoDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {repoDropdownOpen && (
+                  <div className="absolute z-10 mt-1 w-full rounded-md bg-surface border border-[var(--border)] shadow-lg max-h-60 overflow-y-auto">
+                    {/* Option to deselect */}
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedRepo(null); setRepoDropdownOpen(false); }}
+                      className="w-full text-left px-3 py-2 text-sm text-muted hover:bg-accent/5 cursor-pointer border-b border-[var(--border)]"
+                    >
+                      No repository (skip)
+                    </button>
+                    {repos.map((repo) => (
+                      <button
+                        key={repo.full_name}
+                        type="button"
+                        onClick={() => { setSelectedRepo(repo); setRepoDropdownOpen(false); }}
+                        className={`w-full text-left px-3 py-2 hover:bg-accent/5 cursor-pointer ${
+                          selectedRepo?.full_name === repo.full_name ? 'bg-accent/10' : ''
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Github className="h-4 w-4 text-muted shrink-0" />
+                          <span className="text-sm text-foreground truncate">{repo.full_name}</span>
+                          {repo.private && <Lock className="h-3 w-3 text-muted shrink-0" />}
+                        </div>
+                        {repo.description && (
+                          <p className="text-xs text-muted ml-6 mt-0.5 truncate">{repo.description}</p>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Settings — inline grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
@@ -132,31 +274,23 @@ export default function CreateProjectPage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input
-              label="GitHub Repository"
-              placeholder="https://github.com/org/repo"
-              value={githubRepo}
-              onChange={(e) => setGithubRepo(e.target.value)}
-            />
-            <div>
-              <label className="text-sm text-muted mb-2 block">Visibility</label>
-              <div className="flex gap-2">
-                {(['public', 'private', 'unlisted'] as const).map((v) => (
-                  <button
-                    key={v}
-                    type="button"
-                    onClick={() => setVisibility(v)}
-                    className={`px-3 py-2 rounded-md text-sm border capitalize cursor-pointer flex-1 ${
-                      visibility === v
-                        ? 'bg-accent/15 text-accent border-accent/30'
-                        : 'bg-surface text-muted border-[var(--border)] hover:border-accent/20'
-                    }`}
-                  >
-                    {v}
-                  </button>
-                ))}
-              </div>
+          <div>
+            <label className="text-sm text-muted mb-2 block">Visibility</label>
+            <div className="flex gap-2">
+              {(['public', 'private', 'unlisted'] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setVisibility(v)}
+                  className={`px-3 py-2 rounded-md text-sm border capitalize cursor-pointer flex-1 ${
+                    visibility === v
+                      ? 'bg-accent/15 text-accent border-accent/30'
+                      : 'bg-surface text-muted border-[var(--border)] hover:border-accent/20'
+                  }`}
+                >
+                  {v}
+                </button>
+              ))}
             </div>
           </div>
 

@@ -60,6 +60,88 @@ export async function getInstallationToken(installationId: number): Promise<{
 }
 
 /**
+ * List all installations of the GitHub App.
+ * Returns installation IDs + account info.
+ */
+export async function listAppInstallations(): Promise<Array<{
+  id: number;
+  account: { login: string; type: string };
+}>> {
+  try {
+    const jwt = generateAppJWT();
+    const res = await fetch('https://api.github.com/app/installations', {
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * List repos accessible to a specific installation.
+ */
+export async function listInstallationRepos(installationId: number): Promise<Array<{
+  id: number;
+  full_name: string;
+  name: string;
+  owner: { login: string };
+  html_url: string;
+  private: boolean;
+  description: string | null;
+}>> {
+  const tokenData = await getInstallationToken(installationId);
+  if (!tokenData) return [];
+
+  try {
+    const res = await fetch('https://api.github.com/installation/repositories?per_page=100', {
+      headers: {
+        Authorization: `Bearer ${tokenData.token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.repositories || [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Find the GitHub App installation that has access to a specific repo.
+ * Uses GET /repos/{owner}/{repo}/installation (JWT auth).
+ * Returns the installation_id or null if the app isn't installed for that repo.
+ */
+export async function findInstallationForRepo(owner: string, repo: string): Promise<number | null> {
+  try {
+    const jwt = generateAppJWT();
+    const res = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/installation`,
+      {
+        headers: {
+          Authorization: `Bearer ${jwt}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      }
+    );
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.id || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Get the GitHub installation for a project.
  * Returns null if no active installation exists.
  */
