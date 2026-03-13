@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import Button from '@/components/UI/Button';
 import Badge from '@/components/UI/Badge';
-import { X, Send } from 'lucide-react';
+import { X, Send, GitPullRequest, CheckCircle, XCircle, Clock, Minus } from 'lucide-react';
 import { TICKET_STATUS_LABELS, TICKET_PRIORITIES, TICKET_TYPES, TICKET_TYPE_LABELS, APPROVAL_STATUS_LABELS, COMMISSION_RATE, formatCents } from '@/lib/constants';
 import type { Ticket, TicketComment, Position, TicketType, ApprovalStatus } from '@/types';
 
@@ -227,18 +227,25 @@ export default function TicketDetail({ ticket, projectId, userId, isOwner, onClo
           {ticket.deliverables && Array.isArray(ticket.deliverables) && ticket.deliverables.length > 0 && (
             <div>
               <label className="text-sm text-muted mb-1 block">Deliverables</label>
-              <ul className="space-y-1">
-                {ticket.deliverables.map((d, i) => (
-                  <li key={i} className="text-sm">
-                    {d.url ? (
-                      <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
-                        {d.label || d.type}
-                      </a>
-                    ) : (
-                      <span className="text-foreground">{d.label || d.type}</span>
-                    )}
-                  </li>
-                ))}
+              <ul className="space-y-2">
+                {ticket.deliverables.map((d, i) => {
+                  const isPR = d.url?.match(/^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+$/);
+                  return (
+                    <li key={i} className="text-sm">
+                      {d.url ? (
+                        <div className="flex items-center gap-2">
+                          {isPR && <GitPullRequest className="h-3.5 w-3.5 text-accent shrink-0" />}
+                          <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline truncate">
+                            {d.label || d.type}
+                          </a>
+                          {isPR && <PRStatusBadge prUrl={d.url} projectId={projectId} />}
+                        </div>
+                      ) : (
+                        <span className="text-foreground">{d.label || d.type}</span>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}
@@ -383,5 +390,60 @@ export default function TicketDetail({ ticket, projectId, userId, isOwner, onClo
         </div>
       </div>
     </div>
+  );
+}
+
+/** Inline PR status badge — fetches CI check status for a PR deliverable */
+function PRStatusBadge({ prUrl, projectId }: { prUrl: string; projectId: string }) {
+  const [status, setStatus] = useState<'loading' | 'passed' | 'failed' | 'pending' | 'merged' | 'no_checks' | 'error'>('loading');
+
+  useEffect(() => {
+    async function checkPR() {
+      try {
+        const res = await fetch('/api/agent/v1/github/verify-deliverable', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project_id: projectId, pr_url: prUrl }),
+        });
+        if (!res.ok) {
+          setStatus('error');
+          return;
+        }
+        const data = await res.json();
+        if (data.merged) {
+          setStatus('merged');
+        } else if (data.checks_summary === 'all_passed') {
+          setStatus('passed');
+        } else if (data.checks_summary === 'some_failed') {
+          setStatus('failed');
+        } else if (data.checks_summary === 'pending') {
+          setStatus('pending');
+        } else {
+          setStatus('no_checks');
+        }
+      } catch {
+        setStatus('error');
+      }
+    }
+    checkPR();
+  }, [prUrl, projectId]);
+
+  if (status === 'loading') return <Clock className="h-3 w-3 text-muted animate-pulse shrink-0" />;
+  if (status === 'error') return null;
+
+  const config = {
+    passed: { icon: CheckCircle, color: 'text-success', label: 'CI passed' },
+    failed: { icon: XCircle, color: 'text-error', label: 'CI failed' },
+    pending: { icon: Clock, color: 'text-warning', label: 'CI running' },
+    merged: { icon: GitPullRequest, color: 'text-[#a371f7]', label: 'Merged' },
+    no_checks: { icon: Minus, color: 'text-muted', label: 'No CI' },
+  }[status];
+
+  const Icon = config.icon;
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs ${config.color} shrink-0`} title={config.label}>
+      <Icon className="h-3 w-3" />
+      {config.label}
+    </span>
   );
 }

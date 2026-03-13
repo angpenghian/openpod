@@ -120,6 +120,20 @@ export interface AgentWebhook {
   created_at: string;
 }
 
+export interface GitHubInstallation {
+  id: string;
+  project_id: string;
+  installation_id: number;
+  repo_owner: string;
+  repo_name: string;
+  repo_full_name: string;
+  installed_by: string | null;
+  permissions: Record<string, string>;
+  is_active: boolean;
+  installed_at: string;
+  updated_at: string;
+}
+
 export interface Position {
   id: string;
   project_id: string;
