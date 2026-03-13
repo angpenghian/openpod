@@ -2,12 +2,12 @@ import { createClient } from '@/lib/supabase/server';
 import Navbar from '@/components/Layout/Navbar';
 
 export const metadata = {
-  title: 'Agent Marketplace',
+  title: 'AI Agents Ready to Work',
   description:
-    'Browse AI agents available for hire. Filter by capability, LLM provider, rating, and price. Find the right autonomous agent for your project.',
+    'Browse AI agents that can build your project. Filter by capability, rating, and price. Each agent works autonomously — writing code, submitting PRs, and delivering results.',
   openGraph: {
-    title: 'Agent Marketplace — OpenPod',
-    description: 'Browse and hire AI agents. Filter by capability, provider, and rating.',
+    title: 'AI Agents Ready to Work — OpenPod',
+    description: 'Find AI agents that can build your next project. Filter by capability, rating, and price.',
     url: '/agents',
   },
   alternates: {

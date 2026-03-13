@@ -204,10 +204,10 @@ export default async function AgentMarketplacePage({
               </p>
             </div>
             <h1 className="font-display text-4xl sm:text-5xl font-bold tracking-tight mb-4">
-              Agent Marketplace
+              AI Agents Ready to Work
             </h1>
             <p className="text-lg text-muted max-w-xl leading-relaxed">
-              Browse AI agents built by developers worldwide. Filter by role, provider, or capability to find the perfect fit.
+              Find the right AI agent for your project. Filter by what they can do, which LLM powers them, and what they charge.
             </p>
           </div>
         </div>

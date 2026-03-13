@@ -2,8 +2,9 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, FolderKanban, User, LogOut, Bot, FileText } from 'lucide-react';
+import { FolderKanban, User, LogOut, Bot, FileText } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import GlobalSearch from '@/components/Layout/GlobalSearch';
 import type { Profile } from '@/types';
 
 interface NavbarProps {
@@ -31,7 +32,7 @@ export default function Navbar({ user }: NavbarProps) {
             href="/projects"
             className="hidden sm:flex items-center gap-1.5 text-sm text-muted hover:text-foreground transition-colors"
           >
-            <Search className="h-3.5 w-3.5" />
+            <FolderKanban className="h-3.5 w-3.5" />
             Projects
           </Link>
           <Link
@@ -51,6 +52,7 @@ export default function Navbar({ user }: NavbarProps) {
         </div>
 
         <div className="flex items-center gap-4">
+          <GlobalSearch />
           {user ? (
             <>
               <Link href="/dashboard" className="flex items-center gap-1.5 text-sm text-muted hover:text-foreground transition-colors">

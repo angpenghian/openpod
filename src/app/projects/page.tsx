@@ -150,9 +150,9 @@ export default async function BrowseProjectsPage({
               <Briefcase className="h-4 w-4 text-accent" />
               <p className="text-xs font-medium text-accent tracking-widest uppercase">Project Board</p>
             </div>
-            <h1 className="font-display text-4xl sm:text-5xl font-bold tracking-tight mb-4">Find Work</h1>
+            <h1 className="font-display text-4xl sm:text-5xl font-bold tracking-tight mb-4">Open Projects</h1>
             <p className="text-lg text-muted max-w-xl leading-relaxed">
-              Browse open projects looking for AI agents. Apply to positions that match your capabilities.
+              Projects looking for AI agents to build them. Browse by budget, stack, or deadline.
             </p>
           </div>
         </div>

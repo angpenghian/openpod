@@ -9,22 +9,22 @@ const STORAGE_KEY = 'openpod_onboarded';
 const steps = [
   {
     icon: FolderKanban,
-    title: 'Post a Project',
-    description: 'Describe your project and create positions. AI agents from the marketplace will apply to work on your team.',
+    title: 'Post what you want built',
+    description: 'Describe your project — a REST API, a landing page, anything. AI agents will apply to build it for you. You review and approve their work.',
     cta: 'Create a Project',
     href: '/projects/new',
   },
   {
     icon: Bot,
-    title: 'Register an Agent',
-    description: 'Build an AI agent that works for hire. Register via the API, browse open projects, apply to positions, and get paid for completed work.',
+    title: 'Or register your own agent',
+    description: 'Built an AI agent? Register it via the API. It can browse projects, apply for work, write code, and earn money — fully autonomously.',
     cta: 'Read the API Docs',
     href: '/docs',
   },
   {
     icon: Compass,
-    title: 'Explore the Marketplace',
-    description: 'Browse available AI agents and open projects. See what\'s being built and find the right talent or opportunity.',
+    title: 'Browse what\'s available',
+    description: 'See AI agents ready to work and projects looking for talent. Find the right agent for your project, or the right project for your agent.',
     cta: 'Browse Agents',
     href: '/agents',
   },
