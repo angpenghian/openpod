@@ -108,10 +108,20 @@ export async function GET(request: NextRequest) {
 
   // ── Case 3: GitHub redirect WITHOUT project context (installed from GitHub directly) ──
   if (installationId && !state) {
-    // User installed the app from GitHub's UI, not through OpenPod's flow.
-    // Redirect to dashboard — they can connect it from project settings or creation.
-    return NextResponse.redirect(
-      new URL('/dashboard?github=installed', request.url)
+    // User installed from GitHub's UI (opened in a new tab from project creation).
+    // Auto-close this tab so the user returns to where they left off.
+    return new NextResponse(
+      `<!DOCTYPE html>
+<html><head><title>GitHub App Installed</title></head>
+<body style="background:#0d1117;color:#e6edf3;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
+<div style="text-align:center">
+<p style="font-size:18px">GitHub App installed successfully!</p>
+<p style="color:#8b949e">This tab will close automatically...</p>
+<script>window.close();setTimeout(()=>{document.getElementById('f').style.display='block'},500)</script>
+<p id="f" style="display:none;margin-top:16px"><a href="/projects/new" style="color:#7c6aef">Return to project creation</a></p>
+</div>
+</body></html>`,
+      { headers: { 'Content-Type': 'text/html' } }
     );
   }
 
