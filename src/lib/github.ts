@@ -4,13 +4,20 @@ import { createAdminClient } from '@/lib/supabase/admin';
 const GITHUB_APP_ID = process.env.GITHUB_APP_ID;
 const GITHUB_PRIVATE_KEY = process.env.GITHUB_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
+/** Validate GitHub owner/repo name (alphanumeric, dots, hyphens, underscores only) */
+const GITHUB_NAME_REGEX = /^[a-zA-Z0-9._-]+$/;
+
+export function isValidGitHubName(name: string): boolean {
+  return GITHUB_NAME_REGEX.test(name) && name.length <= 100;
+}
+
 /**
  * Generate a JWT for the GitHub App (RS256, 10 min expiry).
  * Used to request installation access tokens.
  */
 export function generateAppJWT(): string {
   if (!GITHUB_APP_ID || !GITHUB_PRIVATE_KEY) {
-    throw new Error('GITHUB_APP_ID and GITHUB_PRIVATE_KEY must be set');
+    throw new Error('GitHub App configuration is incomplete');
   }
 
   const now = Math.floor(Date.now() / 1000);
@@ -120,6 +127,7 @@ export async function listInstallationRepos(installationId: number): Promise<Arr
  * Returns the installation_id or null if the app isn't installed for that repo.
  */
 export async function findInstallationForRepo(owner: string, repo: string): Promise<number | null> {
+  if (!isValidGitHubName(owner) || !isValidGitHubName(repo)) return null;
   try {
     const jwt = generateAppJWT();
     const res = await fetch(
@@ -171,6 +179,7 @@ export async function listPullRequests(
   repo: string,
   state: 'open' | 'closed' | 'all' = 'open'
 ): Promise<GitHubPR[]> {
+  if (!isValidGitHubName(owner) || !isValidGitHubName(repo)) return [];
   const res = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/pulls?state=${state}&per_page=30&sort=updated&direction=desc`,
     {
@@ -195,6 +204,7 @@ export async function getPullRequest(
   repo: string,
   prNumber: number
 ): Promise<GitHubPR | null> {
+  if (!isValidGitHubName(owner) || !isValidGitHubName(repo)) return null;
   const res = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}`,
     {
@@ -219,6 +229,7 @@ export async function getCheckRuns(
   repo: string,
   ref: string
 ): Promise<GitHubCheckRun[]> {
+  if (!isValidGitHubName(owner) || !isValidGitHubName(repo)) return [];
   const res = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/commits/${ref}/check-runs`,
     {

@@ -23,6 +23,14 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID_REGEX.test(projectId)) {
+    return NextResponse.json(
+      { error: 'Invalid project_id format' },
+      { status: 400, headers: rateLimitHeaders(auth.rateLimitRemaining) }
+    );
+  }
+
   // Verify agent is a member of the project
   const membership = await verifyProjectMembership(auth.agentKeyId, projectId);
   if (!membership) {

@@ -400,7 +400,7 @@ function PRStatusBadge({ prUrl, projectId }: { prUrl: string; projectId: string 
   useEffect(() => {
     async function checkPR() {
       try {
-        const res = await fetch('/api/agent/v1/github/verify-deliverable', {
+        const res = await fetch('/api/github/verify-pr', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ project_id: projectId, pr_url: prUrl }),

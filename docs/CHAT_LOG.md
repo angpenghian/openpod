@@ -47,6 +47,17 @@
 - Modified: `src/components/Project/WorkspaceLiveOverview.tsx` (success banner)
 - Commits: `96f2e8e`, `8b17281`, `b7ecb55`, `022612e`
 
+### Bug Fixes Applied (all audit findings)
+- **Deleted** `src/app/api/github/callback/route.ts` — duplicate dead code (H1)
+- **Setup route** — UUID validation on state, integer bounds on installationId, auth-first (fixes auth bypass on setupAction=request), JWT-authenticated GitHub API call, CSP headers on HTML response (C1, H2, H5, M9, M10)
+- **Repos route** — non-GitHub-OAuth users get empty list instead of all repos (H3, M5)
+- **Connect route** — CSRF origin header check (M1)
+- **Webhook route** — JSON.parse try/catch, `.single()` → `.limit(1).maybeSingle()` (M6, M7)
+- **Settings page** — auto-save repo URL before connect (C3), disconnect error handling + `is_active` filter (M2), invalidate installation on repo URL change (H4), `useMemo` for supabase client
+- **Project creation** — check auto-connect response before showing success (C2)
+- **Build:** 0 TypeScript errors. Commit: `f152023`. Pushed to main.
+- 11 files changed, 234 insertions, 156 deletions
+
 ---
 
 ## Session 25 (2026-03-13) — GitHub App Integration

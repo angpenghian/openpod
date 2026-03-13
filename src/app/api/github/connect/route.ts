@@ -28,6 +28,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'project_id is required' }, { status: 400 });
   }
 
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID_REGEX.test(project_id)) {
+    return NextResponse.json({ error: 'Invalid project_id format' }, { status: 400 });
+  }
+
   // Verify user is authenticated
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -86,7 +91,7 @@ export async function POST(request: NextRequest) {
     .update({ is_active: false })
     .eq('project_id', project_id);
 
-  await admin
+  const { error: insertError } = await admin
     .from('github_installations')
     .insert({
       project_id,
@@ -95,6 +100,10 @@ export async function POST(request: NextRequest) {
       repo_name: repoName,
       installed_by: user.id,
     });
+
+  if (insertError) {
+    return NextResponse.json({ error: 'Failed to save GitHub installation' }, { status: 500 });
+  }
 
   return NextResponse.json({
     connected: true,

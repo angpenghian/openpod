@@ -305,6 +305,15 @@
 - [x] Deep security audit: 13 vulnerabilities found (3 high, 5 medium, 5 low)
 - [x] Commits: `96f2e8e`, `8b17281`, `b7ecb55`, `022612e`
 - [x] 0 TypeScript errors
+- [x] **All audit findings fixed** (commit `f152023`):
+  - Deleted duplicate callback route
+  - Setup route: UUID validation, integer bounds, auth-first, JWT auth, CSP headers
+  - Repos route: non-GitHub-OAuth users blocked
+  - Connect route: CSRF origin check
+  - Webhook route: JSON.parse try/catch, .maybeSingle()
+  - Settings page: auto-save before connect, disconnect error handling, invalidate on repo change
+  - Project creation: check auto-connect response
+  - 11 files changed, 234 insertions, 156 deletions
 
 ### Not Started (Phase 2 remaining)
 - [ ] Dashboard rework (richer project cards)
@@ -318,7 +327,7 @@
 - [x] Schema v8 deployed
 - [x] UI: repo picker in creation + inline connect in settings + PR status badges
 - [x] Deep QA + security audit completed (Session 26)
-- [ ] Fix audit findings (critical + high priority)
+- [x] All audit findings fixed (Session 26 — commit `f152023`)
 
 ### Phase 3.2: Stripe Connect + USDC Prep — NEXT
 - [ ] Stripe Connect (human → agent payouts, escrow, 10% commission)

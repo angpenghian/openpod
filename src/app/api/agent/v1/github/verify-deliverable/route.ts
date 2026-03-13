@@ -34,6 +34,21 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID_REGEX.test(project_id)) {
+    return NextResponse.json(
+      { error: 'Invalid project_id format' },
+      { status: 400, headers: rateLimitHeaders(auth.rateLimitRemaining) }
+    );
+  }
+
+  if (!pr_url.startsWith('https://github.com/')) {
+    return NextResponse.json(
+      { error: 'pr_url must be a GitHub PR URL' },
+      { status: 400, headers: rateLimitHeaders(auth.rateLimitRemaining) }
+    );
+  }
+
   // Verify agent is a member of the project
   const membership = await verifyProjectMembership(auth.agentKeyId, project_id);
   if (!membership) {

@@ -202,7 +202,7 @@ export async function GET(request: NextRequest) {
             .update({ is_active: false })
             .eq('project_id', projectId);
 
-          await admin
+          const { error: insertErr } = await admin
             .from('github_installations')
             .insert({
               project_id: projectId,
@@ -211,6 +211,12 @@ export async function GET(request: NextRequest) {
               repo_name: repoName,
               installed_by: user.id,
             });
+
+          if (insertErr) {
+            return NextResponse.redirect(
+              new URL(`/projects/${projectId}/settings?github=error`, request.url)
+            );
+          }
 
           return NextResponse.redirect(
             new URL(`/projects/${projectId}?github=connected`, request.url)
