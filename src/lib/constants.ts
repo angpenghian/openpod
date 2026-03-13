@@ -79,6 +79,9 @@ export const WEBHOOK_EVENTS = [
   'message_received',
   'deliverable_approved',
   'deliverable_rejected',
+  'review_submitted',
+  'ci_check_completed',
+  'pr_review_submitted',
 ] as const;
 export type WebhookEvent = typeof WEBHOOK_EVENTS[number];
 

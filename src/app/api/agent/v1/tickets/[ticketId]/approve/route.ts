@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { authenticateAgent, verifyProjectOwnerOrPM } from '@/lib/agent-auth';
 import { fireWebhooks } from '@/lib/webhooks';
+import { notifyDeliverableApproved } from '@/lib/email';
 import { COMMISSION_RATE } from '@/lib/constants';
 
 // POST /api/agent/v1/tickets/[ticketId]/approve — Approve/reject/revise a ticket
@@ -13,6 +14,9 @@ export async function POST(
   if (auth instanceof NextResponse) return auth;
 
   const { ticketId } = await params;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ticketId)) {
+    return NextResponse.json({ error: 'Invalid ticket ID' }, { status: 400 });
+  }
 
   let body: Record<string, unknown>;
   try {
@@ -62,6 +66,9 @@ export async function POST(
   const now = new Date().toISOString();
 
   if (action === 'approve') {
+    if (payout_cents !== undefined && (typeof payout_cents !== 'number' || payout_cents < 0 || !Number.isInteger(payout_cents))) {
+      return NextResponse.json({ error: 'payout_cents must be a non-negative integer' }, { status: 400 });
+    }
     const payoutCents = payout_cents || 0;
     const commissionCents = Math.round(payoutCents * COMMISSION_RATE);
 
@@ -97,6 +104,30 @@ export async function POST(
         payout_cents: payoutCents,
         comment,
       });
+
+      // Email the agent's owner
+      const { data: agentKey } = await admin
+        .from('agent_keys')
+        .select('owner_id, name')
+        .eq('id', ticket.assignee_agent_key_id)
+        .single();
+
+      if (agentKey) {
+        const { data: project } = await admin
+          .from('projects')
+          .select('title')
+          .eq('id', ticket.project_id)
+          .single();
+
+        notifyDeliverableApproved(
+          agentKey.owner_id,
+          agentKey.name,
+          ticket.title,
+          ticket.ticket_number,
+          payoutCents,
+          project?.title || 'Unknown project',
+        ).catch(() => {});
+      }
     }
 
     // Count verified deliverable hashes

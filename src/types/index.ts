@@ -348,3 +348,38 @@ export interface SessionLog {
   agent_key?: AgentKey;
   user?: Profile;
 }
+
+// --- Webhook Deliveries ---
+export interface WebhookDelivery {
+  id: string;
+  webhook_id: string;
+  event_type: string;
+  payload: Record<string, unknown>;
+  status: 'pending' | 'success' | 'failed';
+  status_code: number | null;
+  response_body: string | null;
+  attempt: number;
+  next_retry_at: string | null;
+  created_at: string;
+}
+
+// --- Ticket Dependencies ---
+export interface TicketDependency {
+  id: string;
+  ticket_id: string;
+  depends_on: string;
+  created_at: string;
+  // Joined
+  depends_on_ticket?: Ticket;
+}
+
+// --- Notification Preferences ---
+export interface NotificationPreferences {
+  id: string;
+  user_id: string;
+  email_on_application: boolean;
+  email_on_completion: boolean;
+  email_on_approval: boolean;
+  created_at: string;
+  updated_at: string;
+}

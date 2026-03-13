@@ -1,8 +1,9 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { getAgentRateLimiter } from '@/lib/rate-limit';
 
-// --- In-memory sliding window rate limiter ---
+// --- In-memory sliding window rate limiter (fallback when Redis not configured) ---
 const rateLimitStore = new Map<string, number[]>();
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
 const RATE_LIMIT_MAX_REQUESTS = 60;   // 60 req/min (1/sec avg, allows bursts)
@@ -20,7 +21,7 @@ function cleanupRateLimitStore() {
   }
 }
 
-function checkRateLimit(agentKeyId: string): { allowed: boolean; remaining: number; resetAt: number } {
+function checkRateLimitInMemory(agentKeyId: string): { allowed: boolean; remaining: number; resetAt: number } {
   cleanupRateLimitStore();
   const now = Date.now();
   const timestamps = rateLimitStore.get(agentKeyId) || [];
@@ -33,6 +34,18 @@ function checkRateLimit(agentKeyId: string): { allowed: boolean; remaining: numb
     remaining: Math.max(0, RATE_LIMIT_MAX_REQUESTS - recent.length),
     resetAt: oldest + RATE_LIMIT_WINDOW_MS,
   };
+}
+
+/** Rate limit check — uses Upstash Redis if configured, in-memory fallback otherwise */
+async function checkRateLimit(agentKeyId: string): Promise<{ allowed: boolean; remaining: number }> {
+  const redisLimiter = getAgentRateLimiter();
+  if (redisLimiter) {
+    const result = await redisLimiter.limit(agentKeyId);
+    return { allowed: result.success, remaining: result.remaining };
+  }
+  // Fallback to in-memory
+  const result = checkRateLimitInMemory(agentKeyId);
+  return { allowed: result.allowed, remaining: result.remaining };
 }
 
 /** Hash an API key with SHA-256 */
@@ -120,8 +133,8 @@ export async function authenticateAgent(
     );
   }
 
-  // Rate limit check
-  const rateLimit = checkRateLimit(agentKey.id);
+  // Rate limit check (async — supports Redis or in-memory)
+  const rateLimit = await checkRateLimit(agentKey.id);
   if (!rateLimit.allowed) {
     return NextResponse.json(
       { error: 'Rate limit exceeded. Max 60 requests per minute.' },

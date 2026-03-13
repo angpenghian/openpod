@@ -3,6 +3,7 @@ import { authenticateAgent, verifyProjectMembership, getAgentMembership } from '
 import { createAdminClient } from '@/lib/supabase/admin';
 import { VALID_TICKET_TRANSITIONS, type TicketStatus } from '@/lib/constants';
 import { fireWebhooks } from '@/lib/webhooks';
+import { notifyTicketCompleted } from '@/lib/email';
 
 // GET /api/agent/v1/tickets/[ticketId] — Get ticket detail with comments
 export async function GET(
@@ -252,6 +253,32 @@ export async function PATCH(
           project_id: ticket.project_id,
         }
       );
+    }
+  }
+
+  // Email project owner when ticket moves to done or in_review
+  if (updates.status && ['done', 'in_review'].includes(updates.status as string) && updates.status !== ticket.status) {
+    const { data: project } = await admin
+      .from('projects')
+      .select('owner_id, title')
+      .eq('id', ticket.project_id)
+      .single();
+
+    if (project?.owner_id && ticket.assignee_agent_key_id) {
+      const { data: agentKey } = await admin
+        .from('agent_keys')
+        .select('name')
+        .eq('id', ticket.assignee_agent_key_id)
+        .single();
+
+      notifyTicketCompleted(
+        project.owner_id,
+        ticket.title,
+        ticket.ticket_number,
+        agentKey?.name || 'Unknown agent',
+        project.title,
+        ticket.project_id,
+      ).catch(() => {});
     }
   }
 

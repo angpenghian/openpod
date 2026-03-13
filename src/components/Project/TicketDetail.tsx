@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import Button from '@/components/UI/Button';
 import Badge from '@/components/UI/Badge';
-import { X, Send, GitPullRequest, CheckCircle, XCircle, Clock, Minus } from 'lucide-react';
+import ReviewForm from '@/components/Project/ReviewForm';
+import { X, Send, GitPullRequest, CheckCircle, XCircle, Clock, Minus, Star, Link2, Trash2 } from 'lucide-react';
 import { TICKET_STATUS_LABELS, TICKET_PRIORITIES, TICKET_TYPES, TICKET_TYPE_LABELS, APPROVAL_STATUS_LABELS, COMMISSION_RATE, formatCents } from '@/lib/constants';
 import type { Ticket, TicketComment, Position, TicketType, ApprovalStatus } from '@/types';
 
@@ -49,9 +50,12 @@ export default function TicketDetail({ ticket, projectId, userId, isOwner, onClo
     loadComments();
   }, [ticket.id, supabase]);
 
+  const [saveError, setSaveError] = useState('');
+
   async function handleSave() {
     setSaving(true);
-    await supabase.from('tickets').update({
+    setSaveError('');
+    const { error } = await supabase.from('tickets').update({
       title: title.trim(),
       description: description.trim() || null,
       priority,
@@ -60,6 +64,10 @@ export default function TicketDetail({ ticket, projectId, userId, isOwner, onClo
       branch: branch.trim() || null,
     }).eq('id', ticket.id);
     setSaving(false);
+    if (error) {
+      setSaveError('Failed to save ticket');
+      return;
+    }
     onClose();
   }
 
@@ -92,7 +100,12 @@ export default function TicketDetail({ ticket, projectId, userId, isOwner, onClo
       updates.status = 'in_progress';
     }
 
-    await supabase.from('tickets').update(updates).eq('id', ticket.id);
+    const { error: updateError } = await supabase.from('tickets').update(updates).eq('id', ticket.id);
+    if (updateError) {
+      setSaveError('Failed to update approval status');
+      setApproving(false);
+      return;
+    }
 
     if (newStatus === 'approved' && payoutCents > 0) {
       // Find position_id via assignee's project membership
@@ -230,15 +243,16 @@ export default function TicketDetail({ ticket, projectId, userId, isOwner, onClo
               <ul className="space-y-2">
                 {ticket.deliverables.map((d, i) => {
                   const isPR = d.url?.match(/^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+$/);
+                  const safeUrl = d.url && /^https?:\/\//i.test(d.url) ? d.url : null;
                   return (
                     <li key={i} className="text-sm">
-                      {d.url ? (
+                      {safeUrl ? (
                         <div className="flex items-center gap-2">
                           {isPR && <GitPullRequest className="h-3.5 w-3.5 text-accent shrink-0" />}
-                          <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline truncate">
+                          <a href={safeUrl} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline truncate">
                             {d.label || d.type}
                           </a>
-                          {isPR && <PRStatusBadge prUrl={d.url} projectId={projectId} />}
+                          {isPR && <PRStatusBadge prUrl={safeUrl} projectId={projectId} />}
                         </div>
                       ) : (
                         <span className="text-foreground">{d.label || d.type}</span>
@@ -255,6 +269,11 @@ export default function TicketDetail({ ticket, projectId, userId, isOwner, onClo
             <div className="text-xs text-muted">
               Story Points: <span className="text-foreground">{ticket.story_points}</span>
             </div>
+          )}
+
+          {/* Dependencies */}
+          {isOwner && (
+            <DependencySection ticketId={ticket.id} projectId={projectId} />
           )}
 
           <div className="text-xs text-muted space-y-1">
@@ -343,6 +362,17 @@ export default function TicketDetail({ ticket, projectId, userId, isOwner, onClo
             </div>
           )}
 
+          {/* Review Form — shown to project owner on completed/approved tickets */}
+          {isOwner && status === 'done' && approvalStatus === 'approved' && ticket.assignee_agent_key_id && (
+            <ReviewSection
+              projectId={projectId}
+              ticketId={ticket.id}
+              assigneeAgentKeyId={ticket.assignee_agent_key_id}
+            />
+          )}
+
+          {saveError && <p className="text-sm text-error bg-error/10 rounded-md px-3 py-2">{saveError}</p>}
+
           <Button onClick={handleSave} loading={saving} className="w-full">
             Save Changes
           </Button>
@@ -390,6 +420,141 @@ export default function TicketDetail({ ticket, projectId, userId, isOwner, onClo
         </div>
       </div>
     </div>
+  );
+}
+
+/** Dependency section — shows what this ticket depends on + add dependency */
+function DependencySection({ ticketId, projectId }: { ticketId: string; projectId: string }) {
+  const [deps, setDeps] = useState<{ id: string; depends_on: string; ticket_number?: number; title?: string; status?: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const supabase = createClient();
+
+  useEffect(() => {
+    async function loadDeps() {
+      // Get all dependencies for this ticket
+      const { data: allDeps } = await supabase
+        .from('ticket_dependencies')
+        .select('id, depends_on')
+        .eq('ticket_id', ticketId);
+
+      if (!allDeps?.length) {
+        setDeps([]);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch ticket info for each dependency
+      const dependsOnIds = allDeps.map(d => d.depends_on);
+      const { data: tickets } = await supabase
+        .from('tickets')
+        .select('id, ticket_number, title, status')
+        .in('id', dependsOnIds);
+
+      const enriched = allDeps.map(d => {
+        const t = tickets?.find(t => t.id === d.depends_on);
+        return { ...d, ticket_number: t?.ticket_number, title: t?.title, status: t?.status };
+      });
+
+      setDeps(enriched);
+      setLoading(false);
+    }
+    loadDeps();
+  }, [ticketId, supabase]);
+
+  async function removeDep(depId: string) {
+    await fetch(`/api/projects/${projectId}/dependencies`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dependency_id: depId }),
+    });
+    setDeps(prev => prev.filter(d => d.id !== depId));
+  }
+
+  if (loading) return null;
+
+  const blockedBy = deps.filter(d => d.status && d.status !== 'done');
+
+  return (
+    <div>
+      <label className="text-sm text-muted mb-1 flex items-center gap-1.5">
+        <Link2 className="h-3.5 w-3.5" />
+        Dependencies
+        {blockedBy.length > 0 && (
+          <span className="text-[10px] text-warning bg-warning/15 px-1.5 py-0.5 rounded">
+            {blockedBy.length} blocking
+          </span>
+        )}
+      </label>
+      {deps.length === 0 ? (
+        <p className="text-xs text-muted/60">No dependencies</p>
+      ) : (
+        <div className="space-y-1">
+          {deps.map(dep => (
+            <div key={dep.id} className="flex items-center gap-2 text-xs">
+              <span className={dep.status === 'done' ? 'text-success' : 'text-warning'}>
+                {dep.status === 'done' ? <CheckCircle className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
+              </span>
+              <span className="text-muted">#{dep.ticket_number}</span>
+              <span className="text-foreground truncate flex-1">{dep.title}</span>
+              <button onClick={() => removeDep(dep.id)} className="text-muted hover:text-error cursor-pointer">
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Review section — resolves agent_registry_id from agent_key_id, then shows form or submitted state */
+function ReviewSection({ projectId, ticketId, assigneeAgentKeyId }: { projectId: string; ticketId: string; assigneeAgentKeyId: string }) {
+  const [registryId, setRegistryId] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
+  const [alreadyReviewed, setAlreadyReviewed] = useState(false);
+  const supabase = createClient();
+
+  useEffect(() => {
+    async function resolve() {
+      const { data } = await supabase
+        .from('agent_keys')
+        .select('registry_id')
+        .eq('id', assigneeAgentKeyId)
+        .single();
+      if (data?.registry_id) {
+        setRegistryId(data.registry_id);
+        // Check if already reviewed
+        const { data: existing } = await supabase
+          .from('reviews')
+          .select('id')
+          .eq('project_id', projectId)
+          .eq('agent_registry_id', data.registry_id)
+          .limit(1)
+          .maybeSingle();
+        if (existing) setAlreadyReviewed(true);
+      }
+    }
+    resolve();
+  }, [assigneeAgentKeyId, projectId, supabase]);
+
+  if (!registryId) return null;
+
+  if (alreadyReviewed || submitted) {
+    return (
+      <div className="flex items-center gap-2 p-3 rounded-md bg-success/10 border border-success/20">
+        <Star className="h-4 w-4 text-success" />
+        <span className="text-xs text-success font-medium">Review submitted</span>
+      </div>
+    );
+  }
+
+  return (
+    <ReviewForm
+      projectId={projectId}
+      agentRegistryId={registryId}
+      ticketId={ticketId}
+      onSubmitted={() => setSubmitted(true)}
+    />
   );
 }
 

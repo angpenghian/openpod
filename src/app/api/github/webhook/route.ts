@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { fireWebhooks } from '@/lib/webhooks';
 
 const WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET;
 
@@ -93,6 +94,120 @@ export async function POST(request: NextRequest) {
                 .eq('id', ticket.id);
             }
           }
+        }
+      }
+      break;
+    }
+
+    case 'check_run': {
+      // CI check completed — notify agents with matching PR deliverables
+      if (payload.action !== 'completed') break;
+
+      const checkInstallationId = payload.installation?.id;
+      if (!checkInstallationId) break;
+
+      const { data: checkInstallation } = await admin
+        .from('github_installations')
+        .select('project_id')
+        .eq('installation_id', checkInstallationId)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+
+      if (!checkInstallation) break;
+
+      // Get PR URLs from the check run
+      const prUrls: string[] = (payload.check_run?.pull_requests || [])
+        .map((pr: { html_url?: string; url?: string; number?: number }) => {
+          // GitHub check_run.pull_requests has 'url' (API) not 'html_url'
+          // Construct the HTML URL from repo + number
+          if (pr.number && payload.repository?.html_url) {
+            return `${payload.repository.html_url}/pull/${pr.number}`;
+          }
+          return pr.html_url || null;
+        })
+        .filter(Boolean) as string[];
+
+      if (prUrls.length === 0) break;
+
+      // Find tickets with matching PR deliverables and notify assigned agents
+      const { data: ciTickets } = await admin
+        .from('tickets')
+        .select('id, assignee_agent_key_id, deliverables')
+        .eq('project_id', checkInstallation.project_id)
+        .in('status', ['in_progress', 'in_review']);
+
+      if (ciTickets) {
+        const affectedAgentKeys: string[] = [];
+        for (const ticket of ciTickets) {
+          const deliverables = ticket.deliverables as Array<{ url?: string }> | null;
+          if (!deliverables) continue;
+          const hasPR = deliverables.some(d => d.url && prUrls.includes(d.url));
+          if (hasPR && ticket.assignee_agent_key_id) {
+            affectedAgentKeys.push(ticket.assignee_agent_key_id);
+          }
+        }
+        if (affectedAgentKeys.length > 0) {
+          fireWebhooks(admin, 'ci_check_completed', affectedAgentKeys, {
+            check_name: payload.check_run?.name,
+            conclusion: payload.check_run?.conclusion,
+            status: payload.check_run?.status,
+            pr_urls: prUrls,
+            project_id: checkInstallation.project_id,
+          }).catch(() => {});
+        }
+      }
+      break;
+    }
+
+    case 'pull_request_review': {
+      // PR review submitted — notify assigned agent
+      if (payload.action !== 'submitted') break;
+
+      const reviewInstallationId = payload.installation?.id;
+      if (!reviewInstallationId) break;
+
+      const { data: reviewInstallation } = await admin
+        .from('github_installations')
+        .select('project_id')
+        .eq('installation_id', reviewInstallationId)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+
+      if (!reviewInstallation) break;
+
+      const reviewPrUrl = payload.pull_request?.html_url;
+      const reviewState = payload.review?.state; // 'approved', 'changes_requested', 'commented'
+
+      if (!reviewPrUrl) break;
+
+      // Find tickets with this PR as a deliverable
+      const { data: reviewTickets } = await admin
+        .from('tickets')
+        .select('id, assignee_agent_key_id, deliverables')
+        .eq('project_id', reviewInstallation.project_id)
+        .in('status', ['in_progress', 'in_review']);
+
+      if (reviewTickets) {
+        const reviewAgentKeys: string[] = [];
+        for (const ticket of reviewTickets) {
+          const deliverables = ticket.deliverables as Array<{ url?: string }> | null;
+          if (!deliverables) continue;
+          const hasPR = deliverables.some(d => d.url === reviewPrUrl);
+          if (hasPR && ticket.assignee_agent_key_id) {
+            reviewAgentKeys.push(ticket.assignee_agent_key_id);
+          }
+        }
+        if (reviewAgentKeys.length > 0) {
+          fireWebhooks(admin, 'pr_review_submitted', reviewAgentKeys, {
+            review_state: reviewState,
+            reviewer: payload.review?.user?.login,
+            pr_url: reviewPrUrl,
+            pr_number: payload.pull_request?.number,
+            body: payload.review?.body?.slice(0, 500),
+            project_id: reviewInstallation.project_id,
+          }).catch(() => {});
         }
       }
       break;

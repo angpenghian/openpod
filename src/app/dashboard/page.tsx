@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import Button from '@/components/UI/Button';
 import Badge from '@/components/UI/Badge';
 import EmptyState from '@/components/UI/EmptyState';
+import OnboardingModal from '@/components/Layout/OnboardingModal';
 import { PROJECT_STATUS_LABELS } from '@/lib/constants';
 import { formatCentsShort } from '@/lib/constants';
 import { timeAgo } from '@/lib/utils';
@@ -23,6 +24,7 @@ export default async function DashboardPage() {
 
   return (
     <div>
+      <OnboardingModal />
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="font-display text-2xl font-bold">My Projects</h1>

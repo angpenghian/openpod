@@ -8,6 +8,7 @@ export function isInternalUrl(url: string): boolean {
     const parsed = new URL(url);
     const hostname = parsed.hostname.toLowerCase();
     if (['localhost', '127.0.0.1', '0.0.0.0', '[::1]', ''].includes(hostname)) return true;
+    if (hostname.includes('::ffff:')) return true; // IPv6-mapped IPv4
     if (hostname.startsWith('10.')) return true;
     if (hostname.startsWith('192.168.')) return true;
     if (hostname.startsWith('169.254.')) return true;
@@ -23,9 +24,14 @@ export function isInternalUrl(url: string): boolean {
   }
 }
 
+/** Retry backoff intervals in ms: 1min, 5min, 15min */
+const RETRY_DELAYS_MS = [60_000, 300_000, 900_000];
+const MAX_ATTEMPTS = 3;
+
 /**
- * Fire-and-forget webhook dispatcher.
- * Uses HMAC-SHA256 signature instead of sending raw secret in header.
+ * Webhook dispatcher with delivery logging and retry.
+ * Logs every delivery attempt to webhook_deliveries table.
+ * Retries failed deliveries up to 3 times with exponential backoff.
  */
 export async function fireWebhooks(
   db: SupabaseClient,
@@ -37,7 +43,7 @@ export async function fireWebhooks(
 
   const { data: webhooks } = await db
     .from('agent_webhooks')
-    .select('url, secret, events')
+    .select('id, url, secret, events')
     .in('agent_key_id', agentKeyIds)
     .eq('is_active', true);
 
@@ -50,10 +56,35 @@ export async function fireWebhooks(
   for (const wh of matching) {
     if (isInternalUrl(wh.url)) continue;
 
-    const body = JSON.stringify({ event, payload, timestamp: new Date().toISOString() });
-    const signature = crypto.createHmac('sha256', wh.secret).update(body).digest('hex');
+    // Fire and don't block the response
+    deliverWebhook(db, wh.id, wh.url, wh.secret, event, payload, 1).catch(() => {});
+  }
+}
 
-    fetch(wh.url, {
+/**
+ * Deliver a single webhook with logging and retry.
+ */
+async function deliverWebhook(
+  db: SupabaseClient,
+  webhookId: string,
+  url: string,
+  secret: string,
+  event: WebhookEvent,
+  payload: Record<string, unknown>,
+  attempt: number,
+): Promise<void> {
+  const body = JSON.stringify({ event, payload, timestamp: new Date().toISOString() });
+  const signature = crypto.createHmac('sha256', secret).update(body).digest('hex');
+
+  let statusCode: number | null = null;
+  let responseBody: string | null = null;
+  let status: 'success' | 'failed' = 'failed';
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000); // 10s timeout
+
+    const res = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -61,6 +92,107 @@ export async function fireWebhooks(
         'X-Webhook-Event': event,
       },
       body,
-    }).catch(() => {});
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+    statusCode = res.status;
+
+    // Read response body (truncated to 500 chars for storage)
+    try {
+      const text = await res.text();
+      responseBody = text.slice(0, 500);
+    } catch {
+      responseBody = null;
+    }
+
+    // 2xx = success
+    if (res.ok) {
+      status = 'success';
+    }
+  } catch {
+    // Network error, timeout, etc.
+    statusCode = null;
+    responseBody = 'Network error or timeout';
   }
+
+  // Compute next retry time
+  const nextRetryAt = status === 'failed' && attempt < MAX_ATTEMPTS
+    ? new Date(Date.now() + RETRY_DELAYS_MS[attempt - 1]).toISOString()
+    : null;
+
+  // Log delivery attempt
+  await db.from('webhook_deliveries').insert({
+    webhook_id: webhookId,
+    event_type: event,
+    payload,
+    status,
+    status_code: statusCode,
+    response_body: responseBody,
+    attempt,
+    next_retry_at: nextRetryAt,
+  }).then(() => {});
+
+  // Schedule retry if failed and under max attempts
+  if (status === 'failed' && attempt < MAX_ATTEMPTS) {
+    const delay = RETRY_DELAYS_MS[attempt - 1];
+    setTimeout(() => {
+      deliverWebhook(db, webhookId, url, secret, event, payload, attempt + 1).catch(() => {});
+    }, delay);
+  }
+}
+
+/**
+ * Process pending retries (called on-demand or via cron).
+ * Looks for failed deliveries with next_retry_at in the past.
+ * Useful as a backup in case setTimeout doesn't fire (serverless cold start).
+ */
+export async function processRetries(db: SupabaseClient): Promise<number> {
+  const { data: pending } = await db
+    .from('webhook_deliveries')
+    .select('id, webhook_id, event_type, payload, attempt')
+    .eq('status', 'failed')
+    .not('next_retry_at', 'is', null)
+    .lte('next_retry_at', new Date().toISOString())
+    .order('next_retry_at', { ascending: true })
+    .limit(20);
+
+  if (!pending?.length) return 0;
+
+  let processed = 0;
+  for (const delivery of pending) {
+    // Get webhook URL and secret
+    const { data: webhook } = await db
+      .from('agent_webhooks')
+      .select('url, secret')
+      .eq('id', delivery.webhook_id)
+      .eq('is_active', true)
+      .single();
+
+    if (!webhook) {
+      // Webhook deleted or deactivated — mark as failed permanently
+      await db.from('webhook_deliveries')
+        .update({ next_retry_at: null })
+        .eq('id', delivery.id);
+      continue;
+    }
+
+    // Clear the retry marker before re-attempting
+    await db.from('webhook_deliveries')
+      .update({ next_retry_at: null })
+      .eq('id', delivery.id);
+
+    await deliverWebhook(
+      db,
+      delivery.webhook_id,
+      webhook.url,
+      webhook.secret,
+      delivery.event_type as WebhookEvent,
+      delivery.payload as Record<string, unknown>,
+      delivery.attempt + 1,
+    );
+    processed++;
+  }
+
+  return processed;
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateAgent } from '@/lib/agent-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { notifyApplicationReceived } from '@/lib/email';
 
 // POST /api/agent/v1/apply — Apply to a position
 export async function POST(request: NextRequest) {
@@ -82,6 +83,25 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+
+  // Notify project owner via email (fire and forget)
+  Promise.resolve(
+    admin
+      .from('projects')
+      .select('owner_id, title')
+      .eq('id', position.project_id)
+      .single()
+  ).then(({ data: project }) => {
+    if (project) {
+      notifyApplicationReceived(
+        project.owner_id,
+        auth.agentName,
+        position.title,
+        project.title,
+        position.project_id,
+      ).catch(() => {});
+    }
+  }).catch(() => {});
 
   return NextResponse.json(
     {
