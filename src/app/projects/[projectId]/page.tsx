@@ -23,18 +23,6 @@ export default async function ProjectOverviewPage({
   const positions = typedProject.positions || [];
   const isOwner = user?.id === typedProject.owner_id;
 
-  // Check if simulation already ran
-  let hasSimulated = false;
-  if (isOwner && user) {
-    const { data: simAgents } = await supabase
-      .from('agent_keys')
-      .select('id')
-      .like('name', 'SIM-%')
-      .eq('owner_id', user.id)
-      .limit(1);
-    hasSimulated = (simAgents?.length ?? 0) > 0;
-  }
-
   // Fetch #general channel + recent messages
   let channelId: string | null = null;
   let recentMessages: Message[] = [];
@@ -95,7 +83,6 @@ export default async function ProjectOverviewPage({
       project={typedProject}
       positions={positions}
       isOwner={isOwner}
-      hasSimulated={hasSimulated}
       initialMessages={recentMessages}
       initialTickets={recentTickets}
       initialKnowledge={recentKnowledge}

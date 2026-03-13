@@ -1,11 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import Badge from '@/components/UI/Badge';
 import QuickChatInput from '@/components/Project/QuickChatInput';
-import SimulationButton from '@/components/Project/SimulationButton';
-import type { SimEvent } from '@/components/Project/SimulationButton';
 import OrgChartInteractive from '@/components/Project/OrgChartInteractive';
 import { Calendar, Github, MessageSquare, Ticket, Brain } from 'lucide-react';
 import { formatCents, TICKET_STATUS_LABELS } from '@/lib/constants';
@@ -13,16 +10,12 @@ import Link from 'next/link';
 import type { Project, Position, Message, Ticket as TicketType, KnowledgeEntry } from '@/types';
 
 interface LiveChat { id: string; agent: string; content: string }
-interface LiveTicket { id: string; title: string; priority: string; number: number }
-interface LiveKnowledge { id: string; title: string; category: string }
-interface LivePosition { id: string; title: string; roleLevel: string }
 
 interface Props {
   projectId: string;
   project: Project;
   positions: Position[];
   isOwner: boolean;
-  hasSimulated: boolean;
   initialMessages: Message[];
   initialTickets: TicketType[];
   initialKnowledge: KnowledgeEntry[];
@@ -31,17 +24,12 @@ interface Props {
 }
 
 export default function WorkspaceLiveOverview({
-  projectId, project, positions, isOwner, hasSimulated,
+  projectId, project, positions, isOwner,
   initialMessages, initialTickets, initialKnowledge,
   channelId, userId,
 }: Props) {
-  const router = useRouter();
   const [liveChats, setLiveChats] = useState<LiveChat[]>([]);
-  const [liveTickets, setLiveTickets] = useState<LiveTicket[]>([]);
-  const [liveKnowledge, setLiveKnowledge] = useState<LiveKnowledge[]>([]);
-  const [livePositions, setLivePositions] = useState<LivePosition[]>([]);
   const chatRef = useRef<HTMLDivElement>(null);
-  const ticketCounter = useRef(0);
 
   // Auto-scroll chat when new live messages appear
   useEffect(() => {
@@ -50,85 +38,12 @@ export default function WorkspaceLiveOverview({
     }
   }, [liveChats]);
 
-  function handleSimEvent(event: SimEvent) {
-    const { agent, action } = event;
-    if (event.type === 'thinking' || event.type === 'done' || event.type === 'error') return;
-
-    // Refresh event: re-fetch all server data (org chart, tickets, etc.)
-    if (event.type === 'refresh') {
-      router.refresh();
-      // Clear live state since server data now includes everything
-      setLivePositions([]);
-      setLiveTickets([]);
-      setLiveKnowledge([]);
-      setLiveChats([]);
-      return;
-    }
-
-    if (action.startsWith('💬 ')) {
-      setLiveChats(prev => [...prev, {
-        id: `live-${Date.now()}-${Math.random()}`,
-        agent,
-        content: action.slice(2).trim(),
-      }]);
-    } else if (action.startsWith('🎫 Created ticket')) {
-      const match = action.match(/Created ticket #(\d+): (.+)/);
-      if (match) {
-        setLiveTickets(prev => [...prev, {
-          id: `live-${Date.now()}-${ticketCounter.current++}`,
-          title: match[2],
-          priority: 'medium',
-          number: parseInt(match[1]),
-        }]);
-      }
-    } else if (action.startsWith('🧠 Wrote to memory: ')) {
-      const title = action.slice('🧠 Wrote to memory: '.length);
-      setLiveKnowledge(prev => [...prev, {
-        id: `live-${Date.now()}-${Math.random()}`,
-        title,
-        category: 'general',
-      }]);
-    } else if (action.startsWith('👤 Created position: ')) {
-      const match = action.match(/Created position: (.+) \((\w+)\)/);
-      if (match) {
-        setLivePositions(prev => [...prev, {
-          id: `live-${Date.now()}-${Math.random()}`,
-          title: match[1],
-          roleLevel: match[2],
-        }]);
-      }
-    }
-  }
-
-  // Merge server positions with live-created positions for org chart
-  const allPositions: Position[] = [
-    ...positions,
-    ...livePositions.map((lp, i) => ({
-      id: lp.id,
-      project_id: projectId,
-      title: lp.title,
-      description: null,
-      required_capabilities: null,
-      pay_rate_cents: null,
-      pay_type: 'fixed' as const,
-      max_agents: 1,
-      status: 'open' as const,
-      role_level: lp.roleLevel as Position['role_level'],
-      reports_to: null,
-      sort_order: positions.length + i,
-      system_prompt: null,
-      payment_status: 'unfunded' as const,
-      amount_earned_cents: 0,
-      created_at: new Date().toISOString(),
-    })),
-  ];
-
-  const totalPositions = allPositions.length;
-  const openPositions = allPositions.filter(p => p.status === 'open').length;
-  const ticketCount = initialTickets.length + liveTickets.length;
+  const totalPositions = positions.length;
+  const openPositions = positions.filter(p => p.status === 'open').length;
+  const ticketCount = initialTickets.length;
   const hasMessages = initialMessages.length > 0 || liveChats.length > 0;
-  const hasTickets = initialTickets.length > 0 || liveTickets.length > 0;
-  const hasKnowledge = initialKnowledge.length > 0 || liveKnowledge.length > 0;
+  const hasTickets = initialTickets.length > 0;
+  const hasKnowledge = initialKnowledge.length > 0;
 
   return (
     <div className="max-w-6xl space-y-6">
@@ -139,15 +54,6 @@ export default function WorkspaceLiveOverview({
         <StatCard label="Tickets" value={ticketCount > 0 ? ticketCount.toString() : '—'} />
         <StatCard label="Budget" value={project.budget_cents ? formatCents(project.budget_cents) : '—'} />
       </div>
-
-      {/* Agent Simulation — owner only */}
-      {isOwner && (
-        <SimulationButton
-          projectId={projectId}
-          hasSimulated={hasSimulated}
-          onSimEvent={handleSimEvent}
-        />
-      )}
 
       {/* Vision + GitHub */}
       <section>
@@ -183,7 +89,7 @@ export default function WorkspaceLiveOverview({
           {/* Org Chart */}
           <section>
             <h2 className="font-display text-xs font-medium text-secondary tracking-widest uppercase mb-3">Organization</h2>
-            <OrgChartInteractive positions={allPositions} project={project} />
+            <OrgChartInteractive positions={positions} project={project} />
           </section>
 
           {/* Tickets */}
@@ -194,9 +100,6 @@ export default function WorkspaceLiveOverview({
                 <div className="divide-y divide-[var(--border)]">
                   {initialTickets.map((ticket) => (
                     <TicketRow key={ticket.id} title={ticket.title} priority={ticket.priority} status={ticket.status} />
-                  ))}
-                  {liveTickets.map((ticket) => (
-                    <TicketRow key={ticket.id} title={ticket.title} priority={ticket.priority} status="todo" live />
                   ))}
                 </div>
               ) : (
@@ -251,9 +154,6 @@ export default function WorkspaceLiveOverview({
                   {initialKnowledge.map((entry) => (
                     <KnowledgeCard key={entry.id} title={entry.title} category={entry.category} />
                   ))}
-                  {liveKnowledge.map((entry) => (
-                    <KnowledgeCard key={entry.id} title={entry.title} category={entry.category} live />
-                  ))}
                 </>
               ) : (
                 <div className="p-4 rounded-md bg-surface border border-[var(--border)]">
@@ -306,9 +206,9 @@ function SectionHeader({ title, icon, href }: { title: string; icon: React.React
   );
 }
 
-function TicketRow({ title, priority, status, live }: { title: string; priority: string; status: string; live?: boolean }) {
+function TicketRow({ title, priority, status }: { title: string; priority: string; status: string }) {
   return (
-    <div className={`flex items-center gap-3 px-4 py-2.5 ${live ? 'bg-accent/5' : ''}`}>
+    <div className="flex items-center gap-3 px-4 py-2.5">
       <Badge variant={
         priority === 'urgent' ? 'error' :
         priority === 'high' ? 'warning' :
@@ -371,9 +271,9 @@ function LiveChatBubble({ agent, content }: { agent: string; content: string }) 
   );
 }
 
-function KnowledgeCard({ title, category, live }: { title: string; category: string; live?: boolean }) {
+function KnowledgeCard({ title, category }: { title: string; category: string }) {
   return (
-    <div className={`p-3 rounded-md bg-surface border border-[var(--border)] ${live ? 'border-accent/20' : ''}`}>
+    <div className="p-3 rounded-md bg-surface border border-[var(--border)]">
       <div className="flex items-center gap-2 mb-1">
         <Badge>{category}</Badge>
       </div>
