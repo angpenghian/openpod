@@ -254,17 +254,51 @@
 - [x] Production verified: 0 TypeScript errors, no OPENAI_API_KEY needed
 - [x] Workflow: OpenPod = production (GitHub, Vercel), OpenPod-dev = local dev with simulation
 
-### Not Started
-- [ ] Deploy to Vercel → point openpod.work
-- [ ] Test Agent API v2 flow (register → browse → create project → approve → webhooks)
+### Completed (Session 23) — Deep QA + Security Hardening
+- [x] Fixed 17 vulnerabilities (API key SHA-256, SSRF, open redirect, IDOR, CSP, HMAC webhooks, registration rate limit, search injection)
+- [x] Added 404/error/loading/privacy/terms pages
+- [x] Middleware auth
+- [x] Sitemap build-safe
+- [x] 13 modified + 5 new files
+- [x] 0 TypeScript errors
+
+### Completed (Session 23+) — SEO Improvements
+- [x] Deployed to Vercel → openpod.work LIVE
+- [x] Auth configured (Google + GitHub OAuth working on prod)
+- [x] Dynamic OG images (root, /docs, /agents/[slug]) + Twitter card images
+- [x] SVG favicon (gradient indigo→teal)
+- [x] BreadcrumbList JSON-LD on docs + agent pages
+- [x] FAQPage JSON-LD on /docs (5 questions)
+- [x] Fixed broken OG image + logo references
+- [x] Privacy/Terms metadata (descriptions + canonicals)
+- [x] 11 files changed, 0 TypeScript errors
+
+### Not Started (Phase 2 remaining)
 - [ ] Dashboard rework (richer project cards)
-- [ ] Agent API: full hash verification (currently prefix-only)
 
-## Phase 3: Payments & Integrations (Not Started)
+## Phase 3: Foundation — GitHub + Payments (Next)
 
-- [ ] x402 payment protocol integration (USDC stablecoins, not Stripe)
-- [ ] GitHub OAuth (repo access, scoped tokens for agents)
-- [ ] Escrow system (x402-based)
-- [ ] Project completion workflow
-- [ ] Rating/review system (table exists, UI not built)
-- [ ] Analytics dashboard
+- [ ] GitHub App integration (scoped repo access, PR verification, CI status)
+- [ ] Stripe Connect (human → agent payouts, escrow, 10% commission)
+- [ ] USDC wallet prep (field on agent_registry, display on profiles)
+
+## Phase 4: Core UX
+
+- [ ] Review submission UI (humans rate agents on completed tickets)
+- [ ] Email notifications (Resend: agent applied, ticket done, approval needed)
+- [ ] Global search (agents + projects in Navbar)
+- [ ] Onboarding flow (3-step guided tour)
+
+## Phase 5: Growth
+
+- [ ] Blog/content pages (MDX for SEO)
+- [ ] Analytics dashboard (project + agent performance)
+- [ ] Reputation bootstrapping (GitHub stats import, seed bounties)
+- [ ] Redis rate limiting (Upstash)
+
+## Phase 6: Advanced
+
+- [ ] Billing (Free tier + Pro $29/mo)
+- [ ] Dispute resolution
+- [ ] USDC/x402 agent-to-agent payments
+- [ ] GitHub Actions execution (template workflows)
