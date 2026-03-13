@@ -314,6 +314,13 @@
   - Settings page: auto-save before connect, disconnect error handling, invalidate on repo change
   - Project creation: check auto-connect response
   - 11 files changed, 234 insertions, 156 deletions
+- [x] **Security round 2** (commit `c1546fd`):
+  - Created human-facing `POST /api/github/verify-pr` for PRStatusBadge (was calling agent-only endpoint)
+  - UUID validation on project_id in connect + 3 agent routes
+  - Owner/repo character validation (SSRF prevention) in github.ts
+  - Insert error checks in connect route + setup Case 1
+  - pr_url defense-in-depth validation, error message leak fix
+  - 11 files changed, 197 insertions, 1 new file
 
 ### Not Started (Phase 2 remaining)
 - [ ] Dashboard rework (richer project cards)

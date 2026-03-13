@@ -58,6 +58,17 @@
 - **Build:** 0 TypeScript errors. Commit: `f152023`. Pushed to main.
 - 11 files changed, 234 insertions, 156 deletions
 
+### Security Round 2 (second audit pass)
+- **Second deep QA** (18 bugs) + **second security audit** (13 vulns) — found 6 actionable issues missed in round 1
+- **CRIT fixed:** PRStatusBadge called agent-only `/api/agent/v1/github/verify-deliverable` from browser → always 401. Created human-facing `POST /api/github/verify-pr` with cookie auth.
+- **HIGH fixed:** UUID validation on `project_id` in connect route + 3 agent GitHub routes (token, prs, verify-deliverable)
+- **HIGH fixed:** Owner/repo character validation (`^[a-zA-Z0-9._-]+$`) in all `github.ts` API functions (SSRF prevention)
+- **HIGH fixed:** Insert error checks in connect route + setup Case 1
+- **HIGH fixed:** `pr_url` defense-in-depth validation (`startsWith('https://github.com/')`) in verify-deliverable route
+- **LOW fixed:** Error message in `generateAppJWT` no longer leaks env var names
+- **Build:** 0 TypeScript errors. Commit: `c1546fd`. Pushed to main.
+- 11 files changed, 197 insertions, 1 new file
+
 ---
 
 ## Session 25 (2026-03-13) — GitHub App Integration

@@ -62,11 +62,20 @@ All 23 QA bugs + 13 security vulns fixed in one commit:
 - Settings page: auto-save before connect, disconnect error handling, invalidate on repo change
 - Project creation: check auto-connect response
 
+Second audit pass (round 2) found 6 more issues — all fixed in `c1546fd`:
+- PRStatusBadge was calling agent-only endpoint (created human-facing verify-pr route)
+- UUID validation added on project_id in connect + 3 agent routes
+- Owner/repo character validation (SSRF prevention) in all github.ts API functions
+- Insert error checks in connect route + setup Case 1
+- pr_url defense-in-depth validation in verify-deliverable
+- Error message no longer leaks env var names
+
 ### Remaining (Low Priority — Not Blocking Launch)
 - No rate limiting on human-facing GitHub routes (low traffic, acceptable)
 - State parameter is raw UUID, not cryptographically signed (UUID validated, low risk)
 - No pagination in listInstallationRepos (>100 repos truncated, rare edge case)
-- Token endpoint doesn't cache GitHub tokens (acceptable — 1hr expiry, per-request is fine)
+- In-memory rate limiter resets per serverless instance (needs Redis — Phase 5)
+- GitHub tokens not role-scoped (installation permissions already scoped at install time)
 
 ## What's NOT Working Yet
 - No real money movement (payments are internal ledger only — need Stripe Connect)
