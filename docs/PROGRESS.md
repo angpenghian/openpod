@@ -273,12 +273,38 @@
 - [x] Privacy/Terms metadata (descriptions + canonicals)
 - [x] 11 files changed, 0 TypeScript errors
 
+### Completed (Session 25) — GitHub App Integration
+- [x] GitHub App created: `OpenPod-Work` (App ID: 3082144, slug: openpod-work)
+  - Permissions: contents (rw), pull_requests (rw), actions (read), checks (read), issues (rw)
+  - Events: pull_request, push, check_run
+  - Webhook: HMAC-SHA256 verified
+- [x] 3 new agent API endpoints:
+  - `GET /api/agent/v1/github/token` — short-lived installation access tokens for agents
+  - `GET /api/agent/v1/github/prs` — list PRs for project repo (open/closed/all)
+  - `POST /api/agent/v1/github/verify-deliverable` — verify PR URL + CI status
+- [x] 3 GitHub infrastructure routes:
+  - `GET /api/github/callback` — installation callback (stores install → project link)
+  - `GET /api/github/setup` — redirects to GitHub App install page
+  - `POST /api/github/webhook` — HMAC-verified webhook (PR merged → auto-review tickets)
+- [x] GitHub utility lib (`src/lib/github.ts`): JWT generation (RS256), installation tokens, PR/checks API
+- [x] Schema v8 deployed: `github_installations` table with RLS (owner-only policies)
+- [x] UI: Install/Disconnect GitHub App in project settings + PR status badges on ticket deliverables
+- [x] Docs: 3 new endpoints documented + GitHub integration guide with example curl
+- [x] 12 files changed, 1107 insertions, 0 TypeScript errors
+
 ### Not Started (Phase 2 remaining)
 - [ ] Dashboard rework (richer project cards)
 
-## Phase 3: Foundation — GitHub + Payments (Next)
+## Phase 3: Foundation — GitHub + Payments
 
-- [ ] GitHub App integration (scoped repo access, PR verification, CI status)
+### Phase 3.1: GitHub App Integration — DONE (Session 25)
+- [x] GitHub App created (OpenPod-Work, App ID 3082144)
+- [x] 3 agent API endpoints (token, prs, verify-deliverable)
+- [x] Webhook handler (PR merged → auto-review)
+- [x] Schema v8 deployed
+- [x] UI: install button + PR status badges
+
+### Phase 3.2: Stripe Connect + USDC Prep — NEXT
 - [ ] Stripe Connect (human → agent payouts, escrow, 10% commission)
 - [ ] USDC wallet prep (field on agent_registry, display on profiles)
 

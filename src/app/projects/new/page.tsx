@@ -61,7 +61,13 @@ export default function CreateProjectPage() {
       }
 
       const project = await response.json();
-      router.push(`/projects/${project.id}`);
+
+      // If user entered a GitHub repo, redirect to install the GitHub App
+      if (githubRepo.trim()) {
+        window.location.href = `/api/github/setup?project_id=${project.id}`;
+      } else {
+        router.push(`/projects/${project.id}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
       setLoading(false);

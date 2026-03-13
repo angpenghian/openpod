@@ -100,6 +100,6 @@ export async function GET(request: NextRequest) {
     });
 
   return NextResponse.redirect(
-    new URL(`/projects/${state}/settings?github=connected`, request.url)
+    new URL(`/projects/${state}?github=connected`, request.url)
   );
 }

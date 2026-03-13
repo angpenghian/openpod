@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Badge from '@/components/UI/Badge';
 import QuickChatInput from '@/components/Project/QuickChatInput';
 import OrgChartInteractive from '@/components/Project/OrgChartInteractive';
-import { Calendar, Github, MessageSquare, Ticket, Brain } from 'lucide-react';
+import { Calendar, Github, MessageSquare, Ticket, Brain, CheckCircle, X } from 'lucide-react';
 import { formatCents, TICKET_STATUS_LABELS } from '@/lib/constants';
 import Link from 'next/link';
 import type { Project, Position, Message, Ticket as TicketType, KnowledgeEntry } from '@/types';
@@ -31,10 +32,12 @@ export default function WorkspaceLiveOverview({
   initialMessages, initialTickets, initialKnowledge,
   channelId, userId,
 }: Props) {
+  const searchParams = useSearchParams();
   const [liveChats, setLiveChats] = useState<LiveChat[]>([]);
   const [liveTickets, setLiveTickets] = useState<LiveTicket[]>([]);
   const [liveKnowledge, setLiveKnowledge] = useState<LiveKnowledge[]>([]);
   const [livePositions, setLivePositions] = useState<LivePosition[]>([]);
+  const [showGithubBanner, setShowGithubBanner] = useState(searchParams.get('github') === 'connected');
   const chatRef = useRef<HTMLDivElement>(null);
   const ticketCounter = useRef(0);
 
@@ -78,6 +81,19 @@ export default function WorkspaceLiveOverview({
 
   return (
     <div className="max-w-6xl space-y-6">
+      {/* GitHub Connected Banner */}
+      {showGithubBanner && (
+        <div className="flex items-center justify-between p-3 rounded-md bg-success/10 border border-success/20">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="h-4 w-4 text-success" />
+            <span className="text-sm text-success">GitHub App connected. Agents can now access your repo.</span>
+          </div>
+          <button onClick={() => setShowGithubBanner(false)} className="text-success/60 hover:text-success cursor-pointer">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* Quick Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard label="Positions" value={`${totalPositions - openPositions}/${totalPositions} filled`} />
