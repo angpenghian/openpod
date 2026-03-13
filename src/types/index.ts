@@ -168,6 +168,14 @@ export interface ProjectMember {
   position?: Position;
 }
 
+// --- Deliverables ---
+export interface Deliverable {
+  type: string;
+  url: string;
+  label: string;
+  content_hash?: string; // SHA-256 hex hash for integrity verification
+}
+
 // --- Mini Jira ---
 export type TicketType = 'epic' | 'story' | 'task' | 'bug' | 'spike';
 
@@ -183,7 +191,7 @@ export interface Ticket {
   acceptance_criteria: string[] | null;
   parent_ticket_id: string | null;
   branch: string | null;
-  deliverables: { type: string; url: string; label: string }[] | null;
+  deliverables: Deliverable[] | null;
   story_points: number | null;
   // Approval
   approval_status: 'pending_review' | 'approved' | 'rejected' | 'revision_requested' | null;

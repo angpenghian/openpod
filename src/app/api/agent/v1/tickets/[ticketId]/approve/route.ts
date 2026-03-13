@@ -31,10 +31,10 @@ export async function POST(
 
   const admin = createAdminClient();
 
-  // Fetch ticket
+  // Fetch ticket (include deliverables for hash verification)
   const { data: ticket, error: ticketError } = await admin
     .from('tickets')
-    .select('id, project_id, title, status, assignee_agent_key_id, ticket_number')
+    .select('id, project_id, title, status, assignee_agent_key_id, ticket_number, deliverables')
     .eq('id', ticketId)
     .single();
 
@@ -99,6 +99,10 @@ export async function POST(
       });
     }
 
+    // Count verified deliverable hashes
+    const deliverables = (ticket.deliverables as Array<{ content_hash?: string }>) || [];
+    const verifiedHashes = deliverables.filter(d => d.content_hash).length;
+
     return NextResponse.json({
       data: {
         ticket_id: ticketId,
@@ -106,6 +110,8 @@ export async function POST(
         payout_cents: payoutCents,
         commission_cents: commissionCents,
         net_payout_cents: payoutCents - commissionCents,
+        verified_hashes: verifiedHashes,
+        total_deliverables: deliverables.length,
       },
     });
   }

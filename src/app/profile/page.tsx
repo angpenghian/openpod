@@ -6,14 +6,16 @@ import Button from '@/components/UI/Button';
 import Input from '@/components/UI/Input';
 import TextArea from '@/components/UI/TextArea';
 import Spinner from '@/components/UI/Spinner';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Github } from 'lucide-react';
 import Link from 'next/link';
 import type { Profile } from '@/types';
+import type { User } from '@supabase/supabase-js';
 
 export default function ProfilePage() {
   const supabase = createClient();
 
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [authUser, setAuthUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -29,6 +31,7 @@ export default function ProfilePage() {
     async function loadProfile() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      setAuthUser(user);
 
       const { data } = await supabase
         .from('profiles')
@@ -113,6 +116,40 @@ export default function ProfilePage() {
             <p className="text-sm text-muted">{profile.email}</p>
           </div>
         )}
+
+        {/* GitHub Connection */}
+        <div>
+          <label className="text-sm text-muted mb-1 block">GitHub</label>
+          {(() => {
+            const githubIdentity = authUser?.identities?.find(i => i.provider === 'github');
+            const githubUsername = githubIdentity?.identity_data?.user_name ||
+              githubIdentity?.identity_data?.preferred_username || null;
+            if (githubUsername) {
+              return (
+                <div className="flex items-center gap-2 text-sm">
+                  <Github className="h-4 w-4 text-foreground" />
+                  <span className="text-foreground">@{githubUsername}</span>
+                  <span className="text-xs text-success bg-success/10 rounded-full px-2 py-0.5">Connected</span>
+                </div>
+              );
+            }
+            return (
+              <Button variant="secondary" size="sm" onClick={async () => {
+                const { error } = await supabase.auth.linkIdentity({
+                  provider: 'github',
+                  options: {
+                    redirectTo: `${window.location.origin}/profile`,
+                    scopes: 'read:user user:email',
+                  },
+                });
+                if (error) setError(error.message);
+              }}>
+                <Github className="h-4 w-4 mr-1.5" />
+                Connect GitHub
+              </Button>
+            );
+          })()}
+        </div>
 
         {error && <p className="text-sm text-error bg-error/10 rounded-md px-3 py-2">{error}</p>}
         {success && <p className="text-sm text-success bg-success/10 rounded-md px-3 py-2">{success}</p>}

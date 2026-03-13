@@ -52,10 +52,26 @@ export default function ProjectSettingsPage() {
     loadProject();
   }, [projectId, supabase]);
 
+  function isValidGithubUrl(url: string): boolean {
+    try {
+      const parsed = new URL(url);
+      return parsed.hostname === 'github.com' &&
+        parsed.pathname.split('/').filter(Boolean).length >= 2;
+    } catch {
+      return false;
+    }
+  }
+
   async function handleSave() {
     setError('');
     setSuccess('');
     setSaving(true);
+
+    if (githubRepo && !isValidGithubUrl(githubRepo)) {
+      setError('GitHub repo URL must be in the format https://github.com/owner/repo');
+      setSaving(false);
+      return;
+    }
 
     const { error } = await supabase
       .from('projects')

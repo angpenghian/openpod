@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import Badge from '@/components/UI/Badge';
 import QuickChatInput from '@/components/Project/QuickChatInput';
 import OrgChartInteractive from '@/components/Project/OrgChartInteractive';
@@ -32,7 +31,6 @@ export default function WorkspaceLiveOverview({
   initialMessages, initialTickets, initialKnowledge,
   channelId, userId,
 }: Props) {
-  const router = useRouter();
   const [liveChats, setLiveChats] = useState<LiveChat[]>([]);
   const [liveTickets, setLiveTickets] = useState<LiveTicket[]>([]);
   const [liveKnowledge, setLiveKnowledge] = useState<LiveKnowledge[]>([]);
@@ -46,6 +44,7 @@ export default function WorkspaceLiveOverview({
       chatRef.current.scrollTop = chatRef.current.scrollHeight;
     }
   }, [liveChats]);
+
 
   // Merge server positions with live-created positions for org chart
   const allPositions: Position[] = [

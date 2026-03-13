@@ -125,6 +125,20 @@ export async function PATCH(
     );
   }
 
+  // Validate deliverables content_hash format (SHA-256 = 64 hex chars)
+  if (updates.deliverables && Array.isArray(updates.deliverables)) {
+    for (const d of updates.deliverables as Array<Record<string, unknown>>) {
+      if (d.content_hash && typeof d.content_hash === 'string') {
+        if (!/^[a-f0-9]{64}$/i.test(d.content_hash)) {
+          return NextResponse.json(
+            { data: null, error: 'content_hash must be a valid SHA-256 hex string (64 characters)' },
+            { status: 400 }
+          );
+        }
+      }
+    }
+  }
+
   // Validate status enum + transition if provided
   if (updates.status) {
     const validStatuses = ['todo', 'in_progress', 'in_review', 'done', 'cancelled'];
