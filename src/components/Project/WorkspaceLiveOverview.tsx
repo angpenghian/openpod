@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
 import Badge from '@/components/UI/Badge';
 import QuickChatInput from '@/components/Project/QuickChatInput';
 import OrgChartInteractive from '@/components/Project/OrgChartInteractive';
@@ -38,6 +39,9 @@ export default function WorkspaceLiveOverview({
   channelId, userId, isAdmin, hasSimulated, hasGitHub,
 }: Props) {
   const searchParams = useSearchParams();
+  const supabase = useMemo(() => createClient(), []);
+  const [realtimeMessages, setRealtimeMessages] = useState<Message[]>([]);
+  const [realtimeTickets, setRealtimeTickets] = useState<TicketType[]>([]);
   const [liveChats, setLiveChats] = useState<LiveChat[]>([]);
   const [liveTickets, setLiveTickets] = useState<LiveTicket[]>([]);
   const [liveKnowledge, setLiveKnowledge] = useState<LiveKnowledge[]>([]);
@@ -51,7 +55,72 @@ export default function WorkspaceLiveOverview({
     if (chatRef.current) {
       chatRef.current.scrollTop = chatRef.current.scrollHeight;
     }
-  }, [liveChats]);
+  }, [liveChats, realtimeMessages]);
+
+  // ── Supabase real-time: messages for this project's channels ──
+  useEffect(() => {
+    if (!channelId) return;
+
+    const chan = supabase
+      .channel(`overview-msgs-${projectId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `channel_id=eq.${channelId}` },
+        async (payload) => {
+          const raw = payload.new as Message;
+          // Skip duplicates
+          setRealtimeMessages(prev => {
+            if (prev.some(m => m.id === raw.id)) return prev;
+            return prev;
+          });
+          // Fetch with author joins
+          const { data } = await supabase
+            .from('messages')
+            .select('*, author_agent:agent_keys!author_agent_key_id(name), author_user:profiles!author_user_id(display_name)')
+            .eq('id', raw.id)
+            .single();
+          if (data) {
+            setRealtimeMessages(prev => {
+              if (prev.some(m => m.id === data.id)) return prev;
+              return [...prev, data as Message];
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(chan); };
+  }, [channelId, projectId, supabase]);
+
+  // ── Supabase real-time: tickets for this project ──
+  useEffect(() => {
+    const chan = supabase
+      .channel(`overview-tickets-${projectId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tickets', filter: `project_id=eq.${projectId}` },
+        async (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const raw = payload.new as TicketType;
+            setRealtimeTickets(prev => {
+              if (prev.some(t => t.id === raw.id)) return prev;
+              return [...prev, raw];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as TicketType;
+            setRealtimeTickets(prev => {
+              const exists = prev.some(t => t.id === updated.id);
+              if (exists) return prev.map(t => t.id === updated.id ? updated : t);
+              return prev;
+            });
+            // Also need to update initialTickets view — merge via key
+          }
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(chan); };
+  }, [projectId, supabase]);
 
 
   // Merge server positions with live-created positions for org chart
@@ -77,11 +146,29 @@ export default function WorkspaceLiveOverview({
     })),
   ];
 
+  // Merge initial tickets with real-time updates (real-time overrides initial for same id)
+  const mergedTickets = useMemo(() => {
+    const map = new Map<string, TicketType>();
+    for (const t of initialTickets) map.set(t.id, t);
+    for (const t of realtimeTickets) map.set(t.id, t);
+    return Array.from(map.values());
+  }, [initialTickets, realtimeTickets]);
+
+  // Merge initial messages with real-time (deduplicate by id)
+  const mergedMessages = useMemo(() => {
+    const map = new Map<string, Message>();
+    for (const m of initialMessages) map.set(m.id, m);
+    for (const m of realtimeMessages) map.set(m.id, m);
+    return Array.from(map.values()).sort((a, b) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+  }, [initialMessages, realtimeMessages]);
+
   const totalPositions = allPositions.length;
   const openPositions = allPositions.filter(p => p.status === 'open').length;
-  const ticketCount = initialTickets.length + liveTickets.length;
-  const hasMessages = initialMessages.length > 0 || liveChats.length > 0;
-  const hasTickets = initialTickets.length > 0 || liveTickets.length > 0;
+  const ticketCount = mergedTickets.length + liveTickets.length;
+  const hasMessages = mergedMessages.length > 0 || liveChats.length > 0;
+  const hasTickets = mergedTickets.length > 0 || liveTickets.length > 0;
   const hasKnowledge = initialKnowledge.length > 0 || liveKnowledge.length > 0;
 
   return (
@@ -166,7 +253,7 @@ export default function WorkspaceLiveOverview({
             <div className="rounded-md bg-surface border border-[var(--border)]">
               {hasTickets ? (
                 <div className="divide-y divide-[var(--border)]">
-                  {initialTickets.map((ticket) => (
+                  {mergedTickets.map((ticket) => (
                     <TicketRow key={ticket.id} title={ticket.title} priority={ticket.priority} status={ticket.status} />
                   ))}
                   {liveTickets.map((ticket) => (
@@ -188,7 +275,7 @@ export default function WorkspaceLiveOverview({
             <div className="rounded-md bg-surface border border-[var(--border)] p-4">
               {hasMessages ? (
                 <div ref={chatRef} className="space-y-3 max-h-64 overflow-y-auto">
-                  {initialMessages.map((msg) => (
+                  {mergedMessages.map((msg) => (
                     <ChatMessage key={msg.id} message={msg} />
                   ))}
                   {liveChats.map((msg) => (
