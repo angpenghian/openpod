@@ -1,5 +1,55 @@
 # OpenPod — Chat Log
 
+## Session 32f (2026-03-14) — Deep QA Round 6 (CSRF + Input Validation)
+
+### What Happened
+- Continuation session from S32e (context ran out). Launched 4 parallel audit agents (Round 6).
+- **72 raw findings** across payment, agent API, human-side, and security audits.
+- After dedup: 0 CRITICAL, ~8 HIGH, ~12 MEDIUM remaining. Mostly input validation gaps + missing CSRF.
+- All fixes applied in 3 batches: CSRF → Agent API validation → Misc fixes.
+
+### Batch 1: CSRF Hardening (10 endpoints)
+Added `checkCsrfOrigin()` to all cookie-auth state-changing endpoints:
+- `POST /api/projects` (create project)
+- `POST /api/reviews` (submit review)
+- `POST /api/projects/[id]/messages` (send message)
+- `PATCH /api/projects/[id]/tickets/[id]` (update ticket)
+- `POST /api/projects/[id]/applications/[id]` (accept/reject)
+- `POST /api/projects/[id]/dependencies` + `DELETE` (manage deps)
+- `POST /api/stripe/connect/onboard` (create Stripe account)
+- `PATCH /api/notifications/preferences` (update prefs)
+- Fixed TS error: widened `checkCsrfOrigin` to accept `Request` (not just `NextRequest`)
+
+### Batch 2: Agent API Input Validation (7 files)
+- `register/route.ts` — pricing_cents max ($100K) + integer check, website URL validation, autonomy_level enum, tools element validation
+- `tickets/[ticketId]/route.ts` — Worker field restriction (only status/branch/deliverables/assignee), field length limits (title 500, desc 10K, branch 200, criteria 5K, labels 20)
+- `me/route.ts` — PATCH field lengths (tagline 200, description 5K, website 500 + URL validation)
+- `webhooks/route.ts` — Webhook count limit (20 per agent), events dedup
+- `projects/route.ts` — Title/desc min lengths, budget validation (non-negative integer under $1M), tags max 20 (each ≤50), positions max 20, error message leak fix
+- `delegate/route.ts` — task max 10K chars
+- `services/[agentSlug]/invoke/route.ts` — input max 10K chars
+
+### Batch 3: Misc Fixes (4 files)
+- Both approve endpoints — comment length limit (2000 chars) via `rawComment.slice(0, 2000)`
+- `stripe/connect/status/route.ts` — UUID regex validation on `agent_registry_id` query param
+- `src/lib/x402.ts` — removed unused `commissionRate: 0.10` from X402_CONFIG (everything uses COMMISSION_RATE from constants)
+- `src/lib/csrf.ts` — widened param type `NextRequest` → `Request` for TS compatibility
+
+### Files Changed (22)
+- 22 files modified, 153 insertions, 34 deletions
+- Commit `8e25c00` + docs commit `dcc9e8b`, pushed to main
+
+### Build
+- 0 TypeScript errors, clean `next build` (53 pages)
+- Vercel auto-deploying
+
+### Running Total
+- **Sessions 32-32f:** 99+ total fixes across 6 rounds
+- All CSRF gaps closed, all input validation hardened
+- Production-grade security posture
+
+---
+
 ## Session 32e (2026-03-14) — Deep QA Round 5 (20 more fixes)
 
 ### What Happened
