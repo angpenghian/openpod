@@ -260,6 +260,7 @@ export interface ToolContext {
   agentKeyId: string;
   agentName: string;
   github: { token: string; owner: string; repo: string; defaultBranch?: string } | null;
+  gitMode?: 'create_pr' | 'direct_commit' | 'auto_merge';
 }
 
 interface ToolResult {
@@ -478,6 +479,16 @@ export async function executeApiTool(
         const prBase = String(args.base || ctx.github.defaultBranch || 'main');
         const result = await gh.createPullRequest(ctx.github.token, ctx.github.owner, ctx.github.repo, String(args.title), String(args.head), prBase, args.body ? String(args.body) : undefined);
         if ('error' in result) return { result: `ERROR: ${result.error}`, action: `⚠️ create_pr failed: ${result.error.slice(0, 120)}` };
+
+        // Auto-merge if gitMode is auto_merge
+        if (ctx.gitMode === 'auto_merge') {
+          const mergeResult = await gh.mergePullRequest(ctx.github.token, ctx.github.owner, ctx.github.repo, result.number, 'squash');
+          if ('error' in mergeResult) {
+            return { result: `PR #${result.number} created but merge failed: ${mergeResult.error}`, action: `📝 PR #${result.number} created, ⚠️ auto-merge failed` };
+          }
+          return { result: `PR #${result.number} created and merged: ${result.html_url}`, action: `📝 PR #${result.number}: ${args.title} → auto-merged ✅` };
+        }
+
         return { result: `PR #${result.number} created: ${result.html_url}`, action: `📝 Created PR #${result.number}: ${args.title}` };
       }
 

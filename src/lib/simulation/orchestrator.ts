@@ -41,6 +41,8 @@ export interface SimulationEvent {
   round?: number;
 }
 
+export type GitMode = 'create_pr' | 'direct_commit' | 'auto_merge';
+
 export interface SimulationConfig {
   projectId: string;
   project: { id: string; title: string; description: string };
@@ -49,6 +51,7 @@ export interface SimulationConfig {
   openaiApiKey: string;
   userId: string;
   github: { token: string; owner: string; repo: string; installationId: number; defaultBranch?: string; permissions?: Record<string, string> } | null;
+  gitMode: GitMode;
   onEvent: (event: SimulationEvent) => void;
   signal: AbortSignal;
 }
@@ -95,15 +98,19 @@ function generateApiKey(): string {
 }
 
 /** Get tools for a worker's coding turn — only GitHub write + comment tools */
-function getWorkerTools(hasGitHub: boolean) {
+function getWorkerTools(hasGitHub: boolean, gitMode: GitMode) {
   const tools = OPENPOD_TOOLS.filter(t =>
     t.type === 'function' && ['add_comment', 'post_message'].includes(t.function.name)
   );
   if (hasGitHub) {
-    // Exclude create_branch — write_file creates branches implicitly via GitHub API.
-    // Also exclude read_file and get_repo_structure to keep the worker focused.
+    // Always include write_file
+    const ghToolNames = ['write_file'];
+    // Include create_pull_request for PR-based modes (create_pr, auto_merge)
+    if (gitMode !== 'direct_commit') {
+      ghToolNames.push('create_pull_request');
+    }
     tools.push(...GITHUB_TOOLS.filter(t =>
-      t.type === 'function' && ['write_file', 'create_pull_request'].includes(t.function.name)
+      t.type === 'function' && ghToolNames.includes(t.function.name)
     ));
   }
   return tools;
@@ -119,7 +126,7 @@ function getLeadTools() {
 // ─── Main Orchestrator ───────────────────────────────────────────────────────
 
 export async function runLiveSimulation(config: SimulationConfig): Promise<void> {
-  const { projectId, project, maxRounds, baseUrl, openaiApiKey, userId, github, onEvent, signal } = config;
+  const { projectId, project, maxRounds, baseUrl, openaiApiKey, userId, github, gitMode, onEvent, signal } = config;
   const db = createAdminClient();
   const openai = new OpenAI({ apiKey: openaiApiKey, timeout: 60_000 });
   const agents: SimulationAgent[] = [];
@@ -208,7 +215,8 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
 
   try {
     const ghLabel = validatedGitHub ? `GitHub: ${validatedGitHub.owner}/${validatedGitHub.repo}` : 'no GitHub';
-    emit({ type: 'system', agent: 'System', action: `🚀 Starting simulation (${ghLabel})` });
+    const modeLabel = gitMode === 'direct_commit' ? ', direct commit' : gitMode === 'auto_merge' ? ', auto-merge PRs' : '';
+    emit({ type: 'system', agent: 'System', action: `🚀 Starting simulation (${ghLabel}${modeLabel})` });
 
     // ═════════════════════════════════════════════════════════════════════════
     // PHASE 0: Cleanup old simulation data
@@ -295,7 +303,7 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
 
     const pmToolCtx: ToolContext = {
       baseUrl, apiKey: pmApiKey, projectId, agentKeyId: pmKey.id,
-      agentName: 'SIM-Project Manager', github: validatedGitHub,
+      agentName: 'SIM-Project Manager', github: validatedGitHub, gitMode,
     };
 
     // Step 1: Create positions (hardcoded structure — 2 leads + 3 workers)
@@ -488,7 +496,7 @@ Output ONLY the raw markdown content. No code fences, no explanations.`,
         // Assign via real API (exercises the full auth + validation stack)
         const assignCtx: ToolContext = {
           baseUrl, apiKey: worker.apiKey, projectId, agentKeyId: worker.id,
-          agentName: worker.name, github: validatedGitHub,
+          agentName: worker.name, github: validatedGitHub, gitMode,
         };
         const { action } = await executeApiTool('update_ticket', {
           ticket_id: ticket.id, status: 'in_progress',
@@ -505,8 +513,8 @@ Output ONLY the raw markdown content. No code fences, no explanations.`,
       }
     }
 
-    // Create git branches for each worker BEFORE they start coding
-    if (validatedGitHub) {
+    // Create git branches for each worker BEFORE they start coding (skip for direct_commit mode)
+    if (validatedGitHub && gitMode !== 'direct_commit') {
       const defaultBr = validatedGitHub.defaultBranch || 'main';
       for (const worker of workers) {
         if (isAborted()) break;
@@ -542,7 +550,7 @@ Output ONLY the raw markdown content. No code fences, no explanations.`,
     ): Promise<void> {
       const toolCtx: ToolContext = {
         baseUrl, apiKey: agent.apiKey, projectId, agentKeyId: agent.id,
-        agentName: agent.name, github: validatedGitHub,
+        agentName: agent.name, github: validatedGitHub, gitMode,
       };
 
       const messages: ChatCompletionMessageParam[] = [
@@ -601,24 +609,42 @@ Output ONLY the raw markdown content. No code fences, no explanations.`,
         emit({ type: 'thinking', agent: worker.roleTitle, action: `⏳ Working on "${ticket.title}"...` });
 
         const roleDesc = getRoleDescription(worker.roleTitle);
-        const tools = getWorkerTools(!!validatedGitHub);
+        const tools = getWorkerTools(!!validatedGitHub, gitMode);
 
         const criteria = Array.isArray(ticket.acceptance_criteria)
           ? ticket.acceptance_criteria.map((c: string, i: number) => `${i + 1}. ${c}`).join('\n')
           : '';
 
         const branchName = worker.branchName || `feat/ticket-${ticket.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30)}`;
-        const ghInstructions = (validatedGitHub && worker.branchName)
-          ? `## GitHub Workflow (REQUIRED)
+        const targetBranch = gitMode === 'direct_commit' ? defaultBranch : branchName;
+
+        let ghInstructions: string;
+        if (validatedGitHub && gitMode === 'direct_commit') {
+          // Direct commit mode — write files straight to default branch, no PRs
+          ghInstructions = `## GitHub Workflow (DIRECT COMMIT MODE)
+Write real code directly to the "${defaultBranch}" branch using these tools:
+1. write_file — write 2-3 implementation files with branch="${defaultBranch}". Use proper file paths like "src/components/Auth.tsx". Write REAL, complete, working code.
+
+IMPORTANT: For EVERY write_file call, set branch="${defaultBranch}" exactly.
+After writing your files, post a message in chat about what you implemented.`;
+        } else if (validatedGitHub && worker.branchName) {
+          // PR modes (create_pr or auto_merge) — same worker instructions
+          ghInstructions = `## GitHub Workflow (REQUIRED)
 Your branch "${branchName}" is already created. Write real code using these tools:
 1. write_file — write 2-3 implementation files on branch="${branchName}". Use proper file paths like "src/components/Auth.tsx". Write REAL, complete, working code.
 2. create_pull_request — title: "${ticket.title}", head: "${branchName}"
 
 IMPORTANT: For EVERY write_file call, set branch="${branchName}" exactly.
-After creating the PR, post a message in chat about it.`
-          : `## Implementation
+After creating the PR, post a message in chat about it.`;
+        } else {
+          ghInstructions = `## Implementation
 Write your implementation as a detailed comment on the ticket using add_comment. Include real code in markdown code blocks.
 Then post a message in chat saying you completed "${ticket.title}".`;
+        }
+
+        const userMsg = gitMode === 'direct_commit'
+          ? `Write the code for "${ticket.title}" now. Use write_file to commit files directly to "${defaultBranch}".`
+          : `Write the code for "${ticket.title}" now. Use write_file to write files on branch "${branchName}", then create_pull_request.`;
 
         await runAgentTurn(
           worker,
@@ -633,7 +659,7 @@ ${criteria ? `Acceptance Criteria:\n${criteria}` : ''}
 ${ghInstructions}
 
 Write REAL, working implementation code. Not pseudocode, not placeholders.`,
-          `Write the code for "${ticket.title}" now. Use write_file to write files on branch "${branchName}", then create_pull_request.`,
+          userMsg,
           tools,
           round,
         );
@@ -669,7 +695,7 @@ Write REAL, working implementation code. Not pseudocode, not placeholders.`,
         // Leads only get 1 iteration — they don't need multi-round tool calling
         const leadToolCtx: ToolContext = {
           baseUrl, apiKey: lead.apiKey, projectId, agentKeyId: lead.id,
-          agentName: lead.name, github: validatedGitHub,
+          agentName: lead.name, github: validatedGitHub, gitMode,
         };
 
         const leadMessages: ChatCompletionMessageParam[] = [
@@ -755,7 +781,7 @@ Do ALL of these in ONE round of tool calls:
           const worker = freeWorkers[i];
           const assignCtx: ToolContext = {
             baseUrl, apiKey: worker.apiKey, projectId, agentKeyId: worker.id,
-            agentName: worker.name, github: validatedGitHub,
+            agentName: worker.name, github: validatedGitHub, gitMode,
           };
           await executeApiTool('update_ticket', { ticket_id: ticket.id, status: 'in_progress' }, assignCtx);
           worker.assignedTicketId = ticket.id;

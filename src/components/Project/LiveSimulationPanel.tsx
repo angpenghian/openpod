@@ -3,7 +3,15 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/UI/Button';
-import { Bot, Square, AlertCircle, Play, RotateCcw } from 'lucide-react';
+import { Bot, Square, AlertCircle, Play, RotateCcw, GitBranch } from 'lucide-react';
+
+type GitMode = 'create_pr' | 'direct_commit' | 'auto_merge';
+
+const GIT_MODE_LABELS: Record<GitMode, string> = {
+  create_pr: 'Create PRs',
+  direct_commit: 'Direct Commit',
+  auto_merge: 'Auto-Merge',
+};
 
 interface SimulationEvent {
   type: 'system' | 'thinking' | 'action' | 'error' | 'refresh' | 'round' | 'done' | 'keepalive';
@@ -25,6 +33,7 @@ export default function LiveSimulationPanel({ projectId, hasGitHub }: LiveSimula
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [maxRounds, setMaxRounds] = useState(20);
+  const [gitMode, setGitMode] = useState<GitMode>('create_pr');
   const [currentRound, setCurrentRound] = useState(0);
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -60,7 +69,7 @@ export default function LiveSimulationPanel({ projectId, hasGitHub }: LiveSimula
       const res = await fetch(`/api/projects/${projectId}/simulate-live`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ maxRounds }),
+        body: JSON.stringify({ maxRounds, gitMode }),
         signal: abort.signal,
       });
 
@@ -183,6 +192,20 @@ export default function LiveSimulationPanel({ projectId, hasGitHub }: LiveSimula
         <div className="flex items-center gap-2">
           {!running && !done && (
             <div className="flex items-center gap-2">
+              {hasGitHub && (
+                <>
+                  <GitBranch className="h-3 w-3 text-muted" />
+                  <select
+                    value={gitMode}
+                    onChange={e => setGitMode(e.target.value as GitMode)}
+                    className="px-2 py-1 text-xs rounded bg-background border border-[var(--border)] text-foreground"
+                  >
+                    {Object.entries(GIT_MODE_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
+                </>
+              )}
               <label className="text-xs text-muted">Rounds:</label>
               <input
                 type="number"

@@ -214,6 +214,27 @@ export async function createPullRequest(
   return { number: data.number, url: data.url, html_url: data.html_url };
 }
 
+/** Merge a pull request */
+export async function mergePullRequest(
+  token: string,
+  owner: string,
+  repo: string,
+  pullNumber: number,
+  mergeMethod: 'merge' | 'squash' | 'rebase' = 'squash',
+): Promise<{ sha: string; merged: boolean } | { error: string }> {
+  const res = await ghFetch(`${GH_API}/repos/${owner}/${repo}/pulls/${pullNumber}/merge`, {
+    method: 'PUT',
+    headers: { ...ghHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ merge_method: mergeMethod }),
+  });
+  if (!res.ok) {
+    const errBody = await res.text();
+    return { error: sanitizeGhError(res.status, errBody) };
+  }
+  const data = await res.json();
+  return { sha: data.sha || 'unknown', merged: data.merged ?? true };
+}
+
 /** List pull requests */
 export async function listPullRequests(
   token: string,

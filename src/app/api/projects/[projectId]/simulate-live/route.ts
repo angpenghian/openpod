@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { checkCsrfOrigin } from '@/lib/csrf';
 import { getProjectInstallation, getInstallationToken } from '@/lib/github';
-import { runLiveSimulation, type SimulationEvent } from '@/lib/simulation/orchestrator';
+import { runLiveSimulation, type SimulationEvent, type GitMode } from '@/lib/simulation/orchestrator';
 
 export const maxDuration = 300; // 5 min max (Vercel Pro)
 
@@ -68,15 +68,19 @@ export async function POST(
     return NextResponse.json({ error: 'OPENAI_API_KEY not configured' }, { status: 500 });
   }
 
-  // Parse maxRounds from body
+  // Parse maxRounds + gitMode from body
   let maxRounds = 20;
+  let gitMode: GitMode = 'create_pr';
   try {
     const body = await request.json();
     if (body.maxRounds && typeof body.maxRounds === 'number') {
       maxRounds = Math.min(100, Math.max(1, body.maxRounds));
     }
+    if (body.gitMode && ['create_pr', 'direct_commit', 'auto_merge'].includes(body.gitMode)) {
+      gitMode = body.gitMode as GitMode;
+    }
   } catch {
-    // No body or invalid JSON — use default
+    // No body or invalid JSON — use defaults
   }
 
   // Check for GitHub integration
@@ -131,6 +135,7 @@ export async function POST(
         openaiApiKey,
         userId: user.id,
         github,
+        gitMode,
         onEvent: send,
         signal: abortController.signal,
       })
