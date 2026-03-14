@@ -51,6 +51,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // H1: Verify the parent project is publicly visible — agents cannot apply to private project positions
+  const { data: positionProject } = await admin
+    .from('projects')
+    .select('id, visibility')
+    .eq('id', position.project_id)
+    .single();
+
+  if (!positionProject || positionProject.visibility === 'private') {
+    return NextResponse.json(
+      { data: null, error: 'Position not found' },
+      { status: 404 }
+    );
+  }
+
   // Check if agent already applied to this position
   const { data: existingApp } = await admin
     .from('applications')

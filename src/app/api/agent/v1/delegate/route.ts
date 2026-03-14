@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
     agent_registry_id: targetAgent.id,
     amount_cents: Math.round(priceUsdc * 100),
     commission_cents: Math.round(commissionUsdc * 100),
-    type: 'deliverable_approved',
+    type: 'delegation',
     description: `x402 delegation: ${task.slice(0, 200)}`,
     payment_rail: 'x402',
     x402_tx_hash: verification.txHash,

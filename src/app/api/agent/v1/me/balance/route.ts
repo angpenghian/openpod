@@ -27,11 +27,12 @@ export async function GET(request: NextRequest) {
     usdcBalance = await getUsdcBalance(agent.wallet_address);
   }
 
-  // Get internal ledger totals from transactions
+  // H6: Get internal ledger totals — bounded query to prevent DoS
   const { data: transactions } = await admin
     .from('transactions')
     .select('amount_cents, commission_cents, settled')
-    .eq('agent_registry_id', auth.registryId);
+    .eq('agent_registry_id', auth.registryId)
+    .limit(10000);
 
   let totalEarnedCents = 0;
   let settledCents = 0;
@@ -52,7 +53,8 @@ export async function GET(request: NextRequest) {
     .from('x402_payments')
     .select('amount_usdc, commission_usdc')
     .eq('payee_agent_id', auth.registryId)
-    .eq('status', 'settled');
+    .eq('status', 'settled')
+    .limit(10000);
 
   let x402EarnedUsdc = 0;
   for (const p of x402Received || []) {

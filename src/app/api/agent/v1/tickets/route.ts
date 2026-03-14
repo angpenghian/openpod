@@ -13,9 +13,10 @@ export async function GET(request: NextRequest) {
   const status = searchParams.get('status');
   const assignee = searchParams.get('assignee');
 
-  if (!projectId) {
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!projectId || !UUID_REGEX.test(projectId)) {
     return NextResponse.json(
-      { data: null, error: 'project_id is required' },
+      { data: null, error: 'Valid project_id is required' },
       { status: 400 }
     );
   }
@@ -165,43 +166,67 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Get next ticket number (auto-increment)
-  const { data: lastTicket } = await admin
-    .from('tickets')
-    .select('ticket_number')
-    .eq('project_id', project_id)
-    .order('ticket_number', { ascending: false })
-    .limit(1)
-    .single();
+  // C6: Get next ticket number with retry on collision (unique constraint on project_id + ticket_number)
+  let ticket = null;
+  let retries = 3;
+  let lastError = null;
 
-  const nextNumber = (lastTicket?.ticket_number || 0) + 1;
+  while (retries > 0) {
+    const { data: lastTicket } = await admin
+      .from('tickets')
+      .select('ticket_number')
+      .eq('project_id', project_id)
+      .order('ticket_number', { ascending: false })
+      .limit(1)
+      .single();
 
-  const { data: ticket, error } = await admin
-    .from('tickets')
-    .insert({
-      project_id,
-      ticket_number: nextNumber,
-      title: title.trim().slice(0, 500),
-      description: description?.trim().slice(0, 10000) || null,
-      status: 'todo',
-      priority: priority || 'medium',
-      ticket_type: ticket_type || 'task',
-      acceptance_criteria: acceptance_criteria || null,
-      labels: labels || [],
-      assignee_agent_key_id: assignee_agent_key_id || null,
-      created_by_agent_key_id: auth.agentKeyId,
-    })
-    .select(`
-      id, project_id, ticket_number, title, description, status, priority,
-      ticket_type, acceptance_criteria, labels, assignee_agent_key_id,
-      created_by_agent_key_id, created_at, updated_at
-    `)
-    .single();
+    const nextNumber = (lastTicket?.ticket_number || 0) + 1;
 
-  if (error) {
+    const { data: inserted, error } = await admin
+      .from('tickets')
+      .insert({
+        project_id,
+        ticket_number: nextNumber,
+        title: title.trim().slice(0, 500),
+        description: description?.trim().slice(0, 10000) || null,
+        status: 'todo',
+        priority: priority || 'medium',
+        ticket_type: ticket_type || 'task',
+        acceptance_criteria: acceptance_criteria || null,
+        labels: labels || [],
+        assignee_agent_key_id: assignee_agent_key_id || null,
+        created_by_agent_key_id: auth.agentKeyId,
+      })
+      .select(`
+        id, project_id, ticket_number, title, description, status, priority,
+        ticket_type, acceptance_criteria, labels, assignee_agent_key_id,
+        created_by_agent_key_id, created_at, updated_at
+      `)
+      .single();
+
+    if (!error) {
+      ticket = inserted;
+      break;
+    }
+
+    // Retry on unique constraint violation (concurrent ticket creation race)
+    if (error.code === '23505') {
+      retries--;
+      lastError = error;
+      continue;
+    }
+
     return NextResponse.json(
       { data: null, error: 'Failed to create ticket' },
       { status: 500 }
+    );
+  }
+
+  if (!ticket) {
+    console.error('Ticket number collision after retries:', lastError);
+    return NextResponse.json(
+      { data: null, error: 'Failed to create ticket (concurrent conflict, please retry)' },
+      { status: 409 }
     );
   }
 

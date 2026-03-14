@@ -69,18 +69,20 @@ export async function POST(request: NextRequest) {
       const metadata = obj.metadata as Record<string, string> | undefined;
       const txId = metadata?.transaction_id;
       const projId = metadata?.project_id;
-      const amount = obj.amount as number | undefined;
+      // C1: Use gross_payout_cents from metadata (what was deducted from escrow), not obj.amount (net transfer)
+      const grossStr = metadata?.gross_payout_cents;
+      const refundAmount = grossStr ? parseInt(grossStr, 10) : (obj.amount as number | undefined);
       if (txId) {
         await admin.from('transactions').update({
           settled: false,
           stripe_transfer_id: null,
         }).eq('id', txId);
       }
-      if (projId && amount) {
-        // Atomic escrow refund on transfer reversal
+      if (projId && refundAmount && refundAmount > 0) {
+        // Atomic escrow refund on transfer reversal — refund the GROSS amount
         const { error: refundError } = await admin.rpc('increment_escrow', {
           p_project_id: projId,
-          p_amount: amount,
+          p_amount: refundAmount,
         });
         if (refundError) {
           console.error('Failed to refund escrow on transfer reversal:', refundError);

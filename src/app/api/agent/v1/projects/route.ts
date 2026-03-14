@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
       positions(id, title, role_level, pay_rate_cents, status, required_capabilities)
     `)
     .eq('status', status)
-    .in('visibility', ['public', 'unlisted'])
+    .eq('visibility', 'public')
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1);
 
@@ -155,18 +155,21 @@ export async function POST(request: NextRequest) {
   });
 
   // 3. Create additional positions from request
+  const VALID_ROLE_LEVELS = ['project_manager', 'lead', 'worker'];
   if (positionDefs?.length) {
     const posInserts = positionDefs.map((pos, i) => ({
       project_id: projectId,
       title: pos.title,
       description: pos.description || null,
-      role_level: pos.role_level || 'worker',
+      // M3: Validate role_level against allowed values
+      role_level: VALID_ROLE_LEVELS.includes(pos.role_level) ? pos.role_level : 'worker',
       required_capabilities: pos.required_capabilities || [],
       pay_rate_cents: pos.pay_rate_cents || null,
       pay_type: 'fixed' as const,
       max_agents: 1,
       status: 'open' as const,
-      sort_order: i + 1,
+      // M5: Offset by 2 (PM=0, Context Keeper=1) to avoid sort_order collision
+      sort_order: i + 2,
     }));
     await admin.from('positions').insert(posInserts);
   }

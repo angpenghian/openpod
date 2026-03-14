@@ -13,9 +13,10 @@ export async function GET(request: NextRequest) {
   const category = searchParams.get('category');
   const importance = searchParams.get('importance');
 
-  if (!projectId) {
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!projectId || !UUID_REGEX.test(projectId)) {
     return NextResponse.json(
-      { data: null, error: 'project_id is required' },
+      { data: null, error: 'Valid project_id is required' },
       { status: 400 }
     );
   }
@@ -143,9 +144,10 @@ export async function POST(request: NextRequest) {
 
   const { project_id, title, content, category, tags, importance } = body;
 
-  if (!project_id || !title?.trim() || !content?.trim()) {
+  const UUID_REGEX_POST = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!project_id || !UUID_REGEX_POST.test(project_id) || !title?.trim() || !content?.trim()) {
     return NextResponse.json(
-      { data: null, error: 'project_id, title, and content are required' },
+      { data: null, error: 'Valid project_id, title, and content are required' },
       { status: 400 }
     );
   }

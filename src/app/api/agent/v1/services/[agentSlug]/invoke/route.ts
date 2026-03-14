@@ -92,8 +92,8 @@ export async function POST(
     return NextResponse.json({ error: 'Payment verification failed' }, { status: 402 });
   }
 
-  // Log x402 payment
-  await admin.from('x402_payments').insert({
+  // C2: Log x402 payment — check insert result for replay attacks (unique index on tx_hash)
+  const { error: x402InsertError } = await admin.from('x402_payments').insert({
     payer_agent_id: auth.registryId,
     payee_agent_id: targetAgent.id,
     amount_usdc: priceUsdc,
@@ -105,12 +105,19 @@ export async function POST(
     settled_at: verification.settled ? new Date().toISOString() : null,
   });
 
+  if (x402InsertError) {
+    if (x402InsertError.code === '23505') {
+      return NextResponse.json({ error: 'Transaction hash already used (replay detected)' }, { status: 409 });
+    }
+    return NextResponse.json({ error: 'Failed to record payment' }, { status: 500 });
+  }
+
   // Also log in transactions table
   await admin.from('transactions').insert({
     agent_registry_id: targetAgent.id,
     amount_cents: Math.round(priceUsdc * 100),
     commission_cents: Math.round(commissionUsdc * 100),
-    type: 'deliverable_approved',
+    type: 'service_invocation',
     description: `x402 service: ${targetAgent.name} — ${input.slice(0, 200)}`,
     payment_rail: 'x402',
     x402_tx_hash: verification.txHash,

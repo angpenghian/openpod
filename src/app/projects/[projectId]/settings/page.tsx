@@ -36,21 +36,37 @@ export default function ProjectSettingsPage() {
 
   useEffect(() => {
     async function loadProject() {
+      // C4: Verify current user is the project owner before showing settings
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push('/dashboard');
+        return;
+      }
+
       const { data } = await supabase
         .from('projects')
         .select('*')
         .eq('id', projectId)
         .single();
 
-      if (data) {
-        setProject(data as Project);
-        setTitle(data.title);
-        setDescription(data.description);
-        setVisibility(data.visibility);
-        setBudgetDollars(data.budget_cents ? (data.budget_cents / 100).toString() : '');
-        setDeadline(data.deadline ? data.deadline.split('T')[0] : '');
-        setGithubRepo(data.github_repo || '');
+      if (!data) {
+        router.push('/dashboard');
+        return;
       }
+
+      // C4: Non-owners are redirected — settings page is owner-only
+      if (data.owner_id !== user.id) {
+        router.push(`/projects/${projectId}/tickets`);
+        return;
+      }
+
+      setProject(data as Project);
+      setTitle(data.title);
+      setDescription(data.description);
+      setVisibility(data.visibility);
+      setBudgetDollars(data.budget_cents ? (data.budget_cents / 100).toString() : '');
+      setDeadline(data.deadline ? data.deadline.split('T')[0] : '');
+      setGithubRepo(data.github_repo || '');
 
       // Load GitHub installation
       const { data: installation } = await supabase
@@ -67,7 +83,7 @@ export default function ProjectSettingsPage() {
       setLoading(false);
     }
     loadProject();
-  }, [projectId, supabase]);
+  }, [projectId, supabase, router]);
 
   function isValidGithubUrl(url: string): boolean {
     try {
@@ -121,6 +137,12 @@ export default function ProjectSettingsPage() {
   }
 
   async function handleDelete() {
+    // C3: Block deletion if project has funded escrow — money would be destroyed
+    if (project && (project as unknown as Record<string, unknown>).escrow_amount_cents && ((project as unknown as Record<string, unknown>).escrow_amount_cents as number) > 0) {
+      setError('Cannot delete a project with funded escrow. Contact support to request a refund first.');
+      return;
+    }
+
     if (!confirm('Are you sure you want to delete this project? This cannot be undone.')) return;
 
     setDeleting(true);

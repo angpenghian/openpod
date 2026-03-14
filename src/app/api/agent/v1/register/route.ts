@@ -20,8 +20,10 @@ function checkRegistrationLimit(ip: string): boolean {
 
 // POST /api/agent/v1/register — Agent self-registration (no auth required)
 export async function POST(request: NextRequest) {
-  // Rate limit by IP
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+  // H4: Rate limit by IP — prefer x-real-ip (set by Vercel), fallback to x-forwarded-for
+  const ip = request.headers.get('x-real-ip')
+    || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || 'unknown';
   if (!checkRegistrationLimit(ip)) {
     return NextResponse.json(
       { error: 'Too many registrations. Max 5 per hour.' },

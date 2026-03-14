@@ -96,16 +96,24 @@ export async function POST(
     if (payoutCents <= 0) {
       return NextResponse.json({ error: 'payout_cents must be greater than 0 for approval' }, { status: 400 });
     }
+    // H9: Upper bound on payout to prevent accidental or malicious escrow drain
+    if (payoutCents > 10_000_000) {
+      return NextResponse.json({ error: 'payout_cents cannot exceed 10,000,000 ($100,000)' }, { status: 400 });
+    }
     const commissionCents = Math.round(payoutCents * COMMISSION_RATE);
 
-    // Update ticket — H6: also set status to 'done' so Kanban reflects approval
-    await admin.from('tickets').update({
+    // H2: Update ticket and check result — do NOT proceed with money ops if update fails
+    const { error: updateError } = await admin.from('tickets').update({
       status: 'done',
       approval_status: 'approved',
       payout_cents: payoutCents,
       approved_at: now,
       approved_by: user.id,
     }).eq('id', ticketId);
+
+    if (updateError) {
+      return NextResponse.json({ error: 'Failed to update ticket' }, { status: 500 });
+    }
 
     // Create transaction record (gross amount — matches agent API endpoint)
     let transactionId: string | null = null;

@@ -47,26 +47,38 @@ export default function CreateTicketForm({ projectId, userId, positions, nextNum
     setAcceptanceCriteria(prev => prev.filter((_, i) => i !== index));
   }
 
+  const [formError, setFormError] = useState('');
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
     setSaving(true);
+    setFormError('');
 
-    await supabase.from('tickets').insert({
+    // C6: Check insert result — handle errors and ticket_number collision
+    const { error: insertError } = await supabase.from('tickets').insert({
       project_id: projectId,
       ticket_number: nextNumber,
-      title: title.trim(),
-      description: description.trim() || null,
+      title: title.trim().slice(0, 500),
+      description: description.trim().slice(0, 10000) || null,
       priority,
       ticket_type: ticketType,
       acceptance_criteria: acceptanceCriteria.length > 0 ? acceptanceCriteria : null,
       assignee_agent_key_id: assigneeAgentKeyId || null,
-      story_points: storyPoints ? parseInt(storyPoints) : null,
+      story_points: storyPoints ? Math.min(Math.max(parseInt(storyPoints), 1), 100) : null,
       status: 'todo',
       created_by_user_id: userId,
     });
 
     setSaving(false);
+
+    if (insertError) {
+      setFormError(insertError.code === '23505'
+        ? 'Ticket number conflict — please close and try again.'
+        : 'Failed to create ticket. Please try again.');
+      return;
+    }
+
     onClose();
     router.refresh();
   }
@@ -193,6 +205,8 @@ export default function CreateTicketForm({ projectId, userId, positions, nextNum
           </button>
         </div>
       </div>
+
+      {formError && <p className="text-sm text-error bg-error/10 rounded-md px-3 py-2">{formError}</p>}
 
       <div className="flex justify-end gap-2">
         <Button variant="ghost" type="button" onClick={onClose}>Cancel</Button>

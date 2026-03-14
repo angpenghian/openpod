@@ -63,7 +63,7 @@ export async function POST(
     .insert({
       channel_id,
       author_user_id: user.id,
-      content: content.trim(),
+      content: content.trim().slice(0, 10000),
     })
     .select('*, author_user:profiles!author_user_id(display_name)')
     .single();

@@ -138,6 +138,7 @@ export async function settleStripeTransfer(
       metadata: {
         transaction_id: transactionId,
         project_id: project.id,
+        gross_payout_cents: payoutCents.toString(),
       },
     });
 

@@ -54,6 +54,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Title and description are required' }, { status: 400 });
     }
 
+    // M: Validate visibility enum and budget
+    const validVisibilities = ['public', 'private', 'unlisted'];
+    const resolvedVisibility = validVisibilities.includes(visibility) ? visibility : 'public';
+    const resolvedBudget = budget_cents && typeof budget_cents === 'number' && budget_cents > 0 ? budget_cents : null;
+
     step = 'create_project';
     const { data: project, error: projectError } = await supabase
       .from('projects')
@@ -61,8 +66,8 @@ export async function POST(request: Request) {
         owner_id: user.id,
         title: title.trim().slice(0, 200),
         description: description.trim().slice(0, 5000),
-        visibility: visibility || 'public',
-        budget_cents: budget_cents || null,
+        visibility: resolvedVisibility,
+        budget_cents: resolvedBudget,
         tags: tags || [],
         deadline: deadline || null,
         github_repo: github_repo || null,
@@ -117,6 +122,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json(project, { status: 201 });
   } catch {
-    return NextResponse.json({ error: `Failed at step: ${step}` }, { status: 500 });
+    // L4: Don't leak internal step names in error responses
+    console.error(`Project creation failed at step: ${step}`);
+    return NextResponse.json({ error: 'Failed to create project' }, { status: 500 });
   }
 }

@@ -13,9 +13,10 @@ export async function GET(request: NextRequest) {
   const channelName = searchParams.get('channel') || 'general';
   const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 200);
 
-  if (!projectId) {
+  const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!projectId || !UUID_REGEX.test(projectId)) {
     return NextResponse.json(
-      { data: null, error: 'project_id is required' },
+      { data: null, error: 'Valid project_id is required' },
       { status: 400 }
     );
   }
@@ -93,9 +94,10 @@ export async function POST(request: NextRequest) {
 
   const { project_id, channel_name = 'general', content, mentions } = body;
 
-  if (!project_id || !content?.trim()) {
+  const UUID_REGEX_POST = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!project_id || !UUID_REGEX_POST.test(project_id) || !content?.trim()) {
     return NextResponse.json(
-      { data: null, error: 'project_id and content are required' },
+      { data: null, error: 'Valid project_id and content are required' },
       { status: 400 }
     );
   }
@@ -166,14 +168,16 @@ export async function POST(request: NextRequest) {
 
   // Fire message_received webhook to all other agents in the project
   if (message) {
+    // M4: Filter out null agent_key_ids (human members without agent keys)
     const { data: members } = await admin
       .from('project_members')
       .select('agent_key_id')
       .eq('project_id', project_id)
+      .not('agent_key_id', 'is', null)
       .neq('agent_key_id', auth.agentKeyId);
 
     if (members?.length) {
-      fireWebhooks(admin, 'message_received', members.map((m) => m.agent_key_id), {
+      fireWebhooks(admin, 'message_received', members.map((m) => m.agent_key_id!), {
         message_id: message.id,
         channel_id: channelId,
         project_id,

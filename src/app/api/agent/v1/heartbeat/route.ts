@@ -11,20 +11,35 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const changesSinceParam = searchParams.get('changes_since');
 
-  // Default: 24 hours ago
-  const changesSince = changesSinceParam
-    ? new Date(changesSinceParam).toISOString()
-    : new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  // H3: Validate date format before using — invalid dates crash with RangeError
+  let changesSince: string;
+  if (changesSinceParam) {
+    const parsedDate = new Date(changesSinceParam);
+    if (isNaN(parsedDate.getTime())) {
+      return NextResponse.json({ error: 'Invalid changes_since date format' }, { status: 400 });
+    }
+    changesSince = parsedDate.toISOString();
+  } else {
+    changesSince = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  }
 
   const admin = createAdminClient();
 
-  // Get agent's project memberships
+  // Get agent's project memberships with role info
   const { data: memberships } = await admin
     .from('project_members')
-    .select('project_id, position_id')
+    .select('project_id, position_id, positions!inner(role_level)')
     .eq('agent_key_id', auth.agentKeyId);
 
   const projectIds = memberships?.map(m => m.project_id) || [];
+
+  // C5+H7: Only PM/lead roles should see awaiting_approval and pending applications
+  const pmProjectIds = (memberships || [])
+    .filter(m => {
+      const role = (m.positions as unknown as { role_level: string })?.role_level;
+      return role === 'project_manager' || role === 'lead';
+    })
+    .map(m => m.project_id);
 
   if (projectIds.length === 0) {
     return NextResponse.json({
@@ -51,16 +66,18 @@ export async function GET(request: NextRequest) {
       .order('updated_at', { ascending: false })
       .limit(50),
 
-    // 2. Tickets awaiting approval (agent is PM/owner)
-    admin
-      .from('tickets')
-      .select('id, project_id, ticket_number, title, status, approval_status, updated_at')
-      .in('project_id', projectIds)
-      .in('status', ['done', 'in_review'])
-      .is('approval_status', null)
-      .gte('updated_at', changesSince)
-      .order('updated_at', { ascending: false })
-      .limit(20),
+    // 2. Tickets awaiting approval — C5: only for projects where agent is PM/lead
+    pmProjectIds.length > 0
+      ? admin
+          .from('tickets')
+          .select('id, project_id, ticket_number, title, status, approval_status, updated_at')
+          .in('project_id', pmProjectIds)
+          .in('status', ['done', 'in_review'])
+          .is('approval_status', null)
+          .gte('updated_at', changesSince)
+          .order('updated_at', { ascending: false })
+          .limit(20)
+      : Promise.resolve({ data: [], error: null }),
 
     // 3. Unread messages across channels
     admin
@@ -72,14 +89,16 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(50),
 
-    // 4. Pending applications to positions in projects this agent manages
-    admin
-      .from('applications')
-      .select('id, position_id, agent_key_id, status, created_at, positions!inner(title, project_id)')
-      .in('positions.project_id', projectIds)
-      .eq('status', 'pending')
-      .gte('created_at', changesSince)
-      .limit(20),
+    // 4. Pending applications — H7: only for projects where agent is PM/lead
+    pmProjectIds.length > 0
+      ? admin
+          .from('applications')
+          .select('id, position_id, agent_key_id, status, created_at, positions!inner(title, project_id)')
+          .in('positions.project_id', pmProjectIds)
+          .eq('status', 'pending')
+          .gte('created_at', changesSince)
+          .limit(20)
+      : Promise.resolve({ data: [], error: null }),
   ]);
 
   const assignedTickets = assignedResult.data || [];
