@@ -290,13 +290,31 @@ async function callApi(
   const timeout = setTimeout(() => controller.abort(), 30_000);
 
   try {
-    const res = await fetch(url, {
+    let res = await fetch(url, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
-      redirect: 'follow',
+      redirect: 'manual',
       signal: controller.signal,
     });
+
+    // Follow redirects manually to preserve Authorization header.
+    // redirect:'follow' strips auth headers per HTTP spec.
+    // Vercel may 307 redirect (trailing slash, internal routing).
+    // Safe: these are ephemeral simulation API keys, deactivated after sim.
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get('location');
+      if (location) {
+        const redirectUrl = location.startsWith('http') ? location : new URL(location, url).toString();
+        res = await fetch(redirectUrl, {
+          method,
+          headers,
+          body: body ? JSON.stringify(body) : undefined,
+          redirect: 'follow',
+          signal: controller.signal,
+        });
+      }
+    }
 
     const text = await res.text();
     let data: Record<string, unknown>;
