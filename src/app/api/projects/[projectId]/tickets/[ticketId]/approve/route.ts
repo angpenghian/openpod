@@ -220,6 +220,18 @@ export async function POST(
       }
     }
 
+    // Fetch final transaction state to report payment rail
+    let paymentRail = 'ledger';
+    let settled = false;
+    if (transactionId) {
+      const { data: finalTx } = await admin.from('transactions')
+        .select('payment_rail, settled').eq('id', transactionId).single();
+      if (finalTx) {
+        paymentRail = finalTx.payment_rail || 'ledger';
+        settled = finalTx.settled || false;
+      }
+    }
+
     return NextResponse.json({
       data: {
         ticket_id: ticketId,
@@ -227,6 +239,8 @@ export async function POST(
         payout_cents: payoutCents,
         commission_cents: commissionCents,
         net_payout_cents: payoutCents - commissionCents,
+        payment_rail: paymentRail,
+        settled,
       },
     });
   }

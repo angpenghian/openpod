@@ -38,17 +38,24 @@ export default function CreateProjectPage() {
   const [githubInstallUrl, setGithubInstallUrl] = useState('');
   const [loadingRepos, setLoadingRepos] = useState(true);
   const [repoDropdownOpen, setRepoDropdownOpen] = useState(false);
+  const [repoError, setRepoError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadRepos() {
+      setRepoError(null);
       try {
         const res = await fetch('/api/github/repos');
+        if (!res.ok) {
+          setRepoError('Failed to load repos. You can skip this and connect GitHub later in project settings.');
+          setLoadingRepos(false);
+          return;
+        }
         const data = await res.json();
         setRepos(data.repos || []);
         setGithubInstalled(data.installed);
         setGithubInstallUrl(data.install_url || '');
       } catch {
-        setGithubInstalled(false);
+        setRepoError('Could not connect to GitHub. You can skip this and connect later in project settings.');
       }
       setLoadingRepos(false);
     }
@@ -169,6 +176,17 @@ export default function CreateProjectPage() {
             {loadingRepos ? (
               <div className="p-3 rounded-md bg-surface border border-[var(--border)] text-sm text-muted">
                 Loading repos...
+              </div>
+            ) : repoError ? (
+              <div className="p-3 rounded-md bg-surface border border-error/20 space-y-2">
+                <p className="text-sm text-error/80">{repoError}</p>
+                <button
+                  type="button"
+                  onClick={() => { setLoadingRepos(true); setRepoError(null); fetch('/api/github/repos').then(r => { if (!r.ok) throw new Error(); return r.json(); }).then(d => { setRepos(d.repos || []); setGithubInstalled(d.installed); setGithubInstallUrl(d.install_url || ''); setLoadingRepos(false); }).catch(() => { setRepoError('Still unable to connect. You can skip this for now.'); setLoadingRepos(false); }); }}
+                  className="text-xs text-accent hover:underline cursor-pointer"
+                >
+                  Try again
+                </button>
               </div>
             ) : githubInstalled === false ? (
               <div className="p-3 rounded-md bg-surface border border-[var(--border)] space-y-2">

@@ -143,7 +143,19 @@ export default function ProjectSettingsPage() {
       return;
     }
 
-    if (!confirm('Are you sure you want to delete this project? This cannot be undone.')) return;
+    // Check for active team members
+    const { data: members } = await supabase
+      .from('project_members')
+      .select('id')
+      .eq('project_id', projectId)
+      .eq('role', 'agent');
+    const memberCount = members?.length || 0;
+
+    const warning = memberCount > 0
+      ? `This project has ${memberCount} active team member(s). Deleting will remove all positions, tickets, and team data. This cannot be undone. Continue?`
+      : 'Are you sure you want to delete this project? This cannot be undone.';
+
+    if (!confirm(warning)) return;
 
     setDeleting(true);
     const { error } = await supabase.from('projects').delete().eq('id', projectId);

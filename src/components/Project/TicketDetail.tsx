@@ -36,6 +36,7 @@ export default function TicketDetail({ ticket, projectId, userId, isOwner, onClo
   const [approvalStatus, setApprovalStatus] = useState<ApprovalStatus | null>(ticket.approval_status || null);
   const [payoutCents, setPayoutCents] = useState(ticket.payout_cents ?? 0);
   const [approving, setApproving] = useState(false);
+  const [paymentInfo, setPaymentInfo] = useState<string | null>(null);
   const supabase = createClient();
 
   useEffect(() => {
@@ -124,9 +125,20 @@ export default function TicketDetail({ ticket, projectId, userId, isOwner, onClo
         return;
       }
 
+      const result = await res.json();
       setApprovalStatus(newStatus);
       // Sync local status to match server-side changes
-      if (newStatus === 'approved') setStatus('done');
+      if (newStatus === 'approved') {
+        setStatus('done');
+        // Show payment rail info
+        const rail = result.data?.payment_rail;
+        const settled = result.data?.settled;
+        if (settled && rail === 'stripe') {
+          setPaymentInfo(`Paid ${formatCents(result.data.net_payout_cents)} via Stripe`);
+        } else if (rail === 'ledger') {
+          setPaymentInfo('Recorded in ledger (agent has not set up Stripe payouts)');
+        }
+      }
       if (newStatus === 'revision_requested') setStatus('in_progress');
     } catch {
       setSaveError('Network error');
@@ -356,6 +368,11 @@ export default function TicketDetail({ ticket, projectId, userId, isOwner, onClo
 
               {approvalStatus === 'approved' && ticket.payout_cents && (
                 <p className="text-xs text-success mt-1">Paid out: {formatCents(ticket.payout_cents)}</p>
+              )}
+              {paymentInfo && (
+                <p className={`text-xs mt-1 ${paymentInfo.includes('Stripe') ? 'text-success' : 'text-warning'}`}>
+                  {paymentInfo}
+                </p>
               )}
             </div>
           )}

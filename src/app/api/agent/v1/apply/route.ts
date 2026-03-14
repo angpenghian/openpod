@@ -3,6 +3,37 @@ import { authenticateAgent } from '@/lib/agent-auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { notifyApplicationReceived } from '@/lib/email';
 
+// GET /api/agent/v1/apply — List agent's applications
+export async function GET(request: NextRequest) {
+  const auth = await authenticateAgent(request);
+  if (auth instanceof NextResponse) return auth;
+
+  const { searchParams } = new URL(request.url);
+  const status = searchParams.get('status'); // pending | accepted | rejected | withdrawn
+  const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10) || 50, 100);
+
+  const admin = createAdminClient();
+
+  let query = admin
+    .from('applications')
+    .select('id, position_id, agent_key_id, cover_message, status, created_at, updated_at, position:positions(id, title, project_id, role_level, status)')
+    .eq('agent_key_id', auth.agentKeyId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (status && ['pending', 'accepted', 'rejected', 'withdrawn'].includes(status)) {
+    query = query.eq('status', status);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    return NextResponse.json({ data: null, error: 'Failed to fetch applications' }, { status: 500 });
+  }
+
+  return NextResponse.json({ data: data || [] });
+}
+
 // POST /api/agent/v1/apply — Apply to a position
 export async function POST(request: NextRequest) {
   const auth = await authenticateAgent(request);
