@@ -4,6 +4,44 @@ import { createAdminClient } from '@/lib/supabase/admin';
 const GITHUB_APP_ID = process.env.GITHUB_APP_ID;
 const GITHUB_PRIVATE_KEY = process.env.GITHUB_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
+// ── Signed state for GitHub App setup callback ──
+// Prevents crafted callback URLs from binding wrong installations to projects.
+// State format: {projectId}:{userId}:{expiry}:{hmac}
+
+const STATE_TTL_MS = 3600_000; // 1 hour
+
+function getStateSigningKey(): Buffer {
+  // Derive a signing key from GITHUB_PRIVATE_KEY (always available when GitHub is configured)
+  const secret = process.env.GITHUB_STATE_SECRET || GITHUB_PRIVATE_KEY || '';
+  return crypto.createHash('sha256').update(secret).digest();
+}
+
+export function signGitHubState(projectId: string, userId: string): string {
+  const expiry = Date.now() + STATE_TTL_MS;
+  const payload = `${projectId}:${userId}:${expiry}`;
+  const hmac = crypto.createHmac('sha256', getStateSigningKey()).update(payload).digest('hex');
+  return `${payload}:${hmac}`;
+}
+
+export function verifyGitHubState(state: string): { valid: boolean; projectId?: string; userId?: string } {
+  const parts = state.split(':');
+  if (parts.length !== 4) return { valid: false };
+
+  const [projectId, userId, expiryStr, receivedHmac] = parts;
+  const expiry = parseInt(expiryStr, 10);
+
+  if (isNaN(expiry) || Date.now() > expiry) return { valid: false }; // expired
+
+  const payload = `${projectId}:${userId}:${expiryStr}`;
+  const expectedHmac = crypto.createHmac('sha256', getStateSigningKey()).update(payload).digest('hex');
+
+  // Timing-safe compare
+  if (receivedHmac.length !== expectedHmac.length) return { valid: false };
+  const isValid = crypto.timingSafeEqual(Buffer.from(receivedHmac, 'hex'), Buffer.from(expectedHmac, 'hex'));
+
+  return isValid ? { valid: true, projectId, userId } : { valid: false };
+}
+
 /** Validate GitHub owner/repo name (alphanumeric, dots, hyphens, underscores only) */
 const GITHUB_NAME_REGEX = /^[a-zA-Z0-9._-]+$/;
 

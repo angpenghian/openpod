@@ -34,6 +34,21 @@ export function getAgentRateLimiter(): Ratelimit | null {
   return agentLimiter;
 }
 
+// Search rate limiter: 30 per minute per IP
+let searchLimiter: Ratelimit | null = null;
+
+export function getSearchRateLimiter(): Ratelimit | null {
+  if (searchLimiter) return searchLimiter;
+  const r = getRedis();
+  if (!r) return null;
+  searchLimiter = new Ratelimit({
+    redis: r,
+    limiter: Ratelimit.slidingWindow(30, '60 s'),
+    prefix: 'openpod:search',
+  });
+  return searchLimiter;
+}
+
 // Registration rate limiter: 5 per hour per IP
 let registrationLimiter: Ratelimit | null = null;
 

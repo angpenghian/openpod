@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { findInstallationForRepo, generateAppJWT } from '@/lib/github';
+import { findInstallationForRepo, generateAppJWT, signGitHubState, verifyGitHubState } from '@/lib/github';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -26,10 +26,13 @@ export async function GET(request: NextRequest) {
 
   // ── Case 2: GitHub's post-install redirect WITH project context ──
   if (installationId && state) {
-    // Validate state is a UUID (prevents open redirect / injection)
-    if (!UUID_REGEX.test(state)) {
+    // Verify HMAC-signed state (prevents crafted callback URLs)
+    const stateResult = verifyGitHubState(state);
+    if (!stateResult.valid || !stateResult.projectId || !stateResult.userId) {
       return NextResponse.redirect(new URL('/dashboard?error=invalid_state', request.url));
     }
+
+    const projectIdFromState = stateResult.projectId;
 
     // Validate installationId is a positive integer
     const installId = parseInt(installationId, 10);
@@ -37,16 +40,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(new URL('/dashboard?error=invalid_installation', request.url));
     }
 
-    // Auth check FIRST — before any redirect (fixes auth bypass on setupAction=request)
+    // Auth check — verify the logged-in user matches the state's user
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.redirect(new URL('/auth/login?error=unauthenticated', request.url));
+    if (!user || user.id !== stateResult.userId) {
+      return NextResponse.redirect(new URL('/login?error=unauthenticated', request.url));
     }
 
     // Now handle setupAction=request (AFTER auth check)
     if (setupAction === 'request') {
-      return NextResponse.redirect(new URL(`/projects/${state}/settings?github=requested`, request.url));
+      return NextResponse.redirect(new URL(`/projects/${projectIdFromState}/settings?github=requested`, request.url));
     }
 
     const admin = createAdminClient();
@@ -55,7 +58,7 @@ export async function GET(request: NextRequest) {
     const { data: project } = await admin
       .from('projects')
       .select('id, owner_id, github_repo')
-      .eq('id', state)
+      .eq('id', projectIdFromState)
       .single();
 
     if (!project || project.owner_id !== user.id) {
@@ -79,7 +82,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // If couldn't parse, fetch from GitHub API WITH JWT auth (fixes unauthenticated API call)
+    // If project has a repo set, verify this installation actually has access to it
+    if (repoOwner && repoName) {
+      const verifiedInstallId = await findInstallationForRepo(repoOwner, repoName);
+      if (verifiedInstallId && verifiedInstallId !== installId) {
+        // The installation from the callback doesn't match the one that has repo access
+        return NextResponse.redirect(new URL(`/projects/${projectIdFromState}/settings?github=error&reason=installation_mismatch`, request.url));
+      }
+    }
+
+    // If couldn't parse repo from project, fetch from GitHub API WITH JWT auth
     if (!repoOwner || !repoName) {
       try {
         const jwt = generateAppJWT();
@@ -105,12 +117,12 @@ export async function GET(request: NextRequest) {
     await admin
       .from('github_installations')
       .update({ is_active: false })
-      .eq('project_id', state);
+      .eq('project_id', projectIdFromState);
 
     const { error: insertError } = await admin
       .from('github_installations')
       .insert({
-        project_id: state,
+        project_id: projectIdFromState,
         installation_id: installId,
         repo_owner: repoOwner,
         repo_name: repoName,
@@ -118,11 +130,11 @@ export async function GET(request: NextRequest) {
       });
 
     if (insertError) {
-      return NextResponse.redirect(new URL(`/projects/${state}/settings?github=error`, request.url));
+      return NextResponse.redirect(new URL(`/projects/${projectIdFromState}/settings?github=error`, request.url));
     }
 
     return NextResponse.redirect(
-      new URL(`/projects/${state}?github=connected`, request.url)
+      new URL(`/projects/${projectIdFromState}?github=connected`, request.url)
     );
   }
 
@@ -172,7 +184,7 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
-    return NextResponse.redirect(new URL('/auth/login', request.url));
+    return NextResponse.redirect(new URL('/login', request.url));
   }
 
   const admin = createAdminClient();
@@ -228,7 +240,8 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // App not installed — redirect to GitHub to install it
-  const installUrl = `https://github.com/apps/${appSlug}/installations/new?state=${projectId}`;
+  // App not installed — redirect to GitHub to install it (signed state prevents forged callbacks)
+  const signedState = signGitHubState(projectId, user.id);
+  const installUrl = `https://github.com/apps/${appSlug}/installations/new?state=${encodeURIComponent(signedState)}`;
   return NextResponse.redirect(installUrl);
 }
