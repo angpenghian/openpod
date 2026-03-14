@@ -33,7 +33,6 @@ export const OPENPOD_TOOLS: ChatCompletionTool[] = [
           priority: { type: 'string', enum: ['low', 'medium', 'high', 'urgent'] },
           ticket_type: { type: 'string', enum: ['epic', 'story', 'task', 'bug', 'spike'] },
           acceptance_criteria: { type: 'array', items: { type: 'string' }, description: 'Testable criteria. Required for stories.' },
-          labels: { type: 'array', items: { type: 'string' }, description: 'Tags like ["frontend", "react"]' },
         },
         required: ['title', 'description', 'priority', 'ticket_type'],
       },
@@ -340,14 +339,16 @@ export async function executeApiTool(
         const { ok, status, data } = await callApi(ctx, 'GET', `/api/agent/v1/tickets?${params}`);
         if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ list_tickets failed (${status}: ${String(data.error || 'unknown').slice(0, 80)})` };
         const tickets = (data.data as Array<{ id: string; ticket_number: number; title: string; description: string; status: string; priority: string; assignee_agent_key_id: string | null; labels: string[] }>) || [];
-        const summary = tickets.map(t => `id:${t.id} #${t.ticket_number} [${t.status}] (${t.priority}) "${t.title}" ${t.assignee_agent_key_id ? '(assigned)' : '(unassigned)'} labels:[${(t.labels || []).join(',')}]\n  ${(t.description || '').slice(0, 120)}`).join('\n');
+        const summary = tickets.map(t => `id:${t.id} #${t.ticket_number} [${t.status}] (${t.priority}) "${t.title}" ${t.assignee_agent_key_id ? '(assigned)' : '(unassigned)'}\n  ${(t.description || '').slice(0, 120)}`).join('\n');
         return { result: summary || 'No tickets found', action: `📋 Listed ${tickets.length} tickets` };
       }
 
       case 'create_ticket': {
+        // Strip labels to prevent capability mismatch 400 errors
+        const { labels: _labels, ...ticketArgs } = args;
         const { ok, status, data } = await callApi(ctx, 'POST', '/api/agent/v1/tickets', {
           project_id: ctx.projectId,
-          ...args,
+          ...ticketArgs,
         });
         if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ create_ticket failed (${status}: ${String(data.error || 'unknown').slice(0, 80)})` };
         const ticket = data.data as { ticket_number: number; id: string };
@@ -357,7 +358,7 @@ export async function executeApiTool(
       case 'update_ticket': {
         const ticketId = String(args.ticket_id);
         const updateBody: Record<string, unknown> = {};
-        for (const field of ['status', 'branch', 'deliverables', 'title', 'description', 'priority', 'labels']) {
+        for (const field of ['status', 'branch', 'deliverables', 'title', 'description', 'priority']) {
           if (args[field] !== undefined) updateBody[field] = args[field];
         }
         // Self-assign if changing to in_progress and no explicit assignee

@@ -122,13 +122,17 @@ function generateApiKey(): string {
 }
 
 function getToolsForRole(roleLevel: string, hasGitHub: boolean): typeof OPENPOD_TOOLS {
-  const tools = [...OPENPOD_TOOLS];
+  let tools = [...OPENPOD_TOOLS];
   if (hasGitHub && (roleLevel === 'worker' || roleLevel === 'lead')) {
     tools.push(...GITHUB_TOOLS);
   }
   // Remove approve_ticket for non-PM roles
   if (roleLevel !== 'project_manager') {
-    return tools.filter(t => t.type !== 'function' || t.function.name !== 'approve_ticket');
+    tools = tools.filter(t => t.type !== 'function' || t.function.name !== 'approve_ticket');
+  }
+  // Only PM creates tickets — leads and workers just work on existing ones
+  if (roleLevel !== 'project_manager') {
+    tools = tools.filter(t => t.type !== 'function' || t.function.name !== 'create_ticket');
   }
   return tools;
 }
@@ -237,6 +241,32 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
     let pmAgent: SimulationAgent | undefined;
 
     if (!resuming) {
+      // ── PHASE 0: Clean up old simulation data ──
+      // Delete old positions (except PM), tickets, and deactivate old sim keys
+      // so fresh simulation starts clean without leftover "Context Keeper" etc.
+      emit({ type: 'system', agent: 'System', action: '🧹 Cleaning up old simulation data...' });
+
+      // Deactivate any old simulation agent keys for this project
+      const { data: oldMembers } = await db
+        .from('project_members')
+        .select('agent_key_id')
+        .eq('project_id', projectId)
+        .eq('role', 'agent');
+      if (oldMembers?.length) {
+        const oldKeyIds = oldMembers.map(m => m.agent_key_id).filter(Boolean) as string[];
+        if (oldKeyIds.length > 0) {
+          await db.from('agent_keys').update({ is_active: false }).in('id', oldKeyIds).eq('agent_type', 'simulation');
+        }
+        // Remove old agent project members
+        await db.from('project_members').delete().eq('project_id', projectId).eq('role', 'agent');
+      }
+
+      // Delete old non-PM positions (they'll be recreated by the new PM)
+      await db.from('positions').delete().eq('project_id', projectId).neq('role_level', 'project_manager');
+
+      // Clear old tickets and their labels so fresh sim starts clean
+      await db.from('tickets').update({ labels: [] }).eq('project_id', projectId);
+
       // ── PHASE 1: Setup — Create PM agent with real API key ──
 
       // Get or create #general channel
@@ -700,6 +730,8 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
         { role: 'user', content: userMessage },
       ];
 
+      let consecutiveErrors = 0;
+
       for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
         if (isAborted()) return;
 
@@ -722,6 +754,7 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
         messages.push(choice.message);
 
         // Execute each tool call and build result messages
+        let iterHadError = false;
         for (const toolCall of choice.message.tool_calls) {
           if (isAborted()) return;
           if (toolCall.type !== 'function') continue;
@@ -730,9 +763,12 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
           try { args = JSON.parse(toolCall.function.arguments); } catch {
             emit({ type: 'error', agent: agent.roleTitle, action: '⚠️ Malformed tool args, skipping' });
             messages.push({ role: 'tool', tool_call_id: toolCall.id, content: 'Error: malformed arguments' });
+            iterHadError = true;
             continue;
           }
           const { result, action } = await executeApiTool(toolCall.function.name, args, toolCtx);
+
+          if (result.startsWith('ERROR:')) iterHadError = true;
 
           // Emit the human-readable action to SSE stream
           emit({ type: 'action', agent: agent.roleTitle, action, round: roundNum });
@@ -743,6 +779,17 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
             tool_call_id: toolCall.id,
             content: result,
           });
+        }
+
+        // Break if agent keeps hitting errors (stuck in a loop)
+        if (iterHadError) {
+          consecutiveErrors++;
+          if (consecutiveErrors >= 2) {
+            emit({ type: 'error', agent: agent.roleTitle, action: '⚠️ Multiple errors — moving on' });
+            break;
+          }
+        } else {
+          consecutiveErrors = 0;
         }
       }
     }
@@ -764,7 +811,7 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
 
       await runAgentTurn(
         agent,
-        `You are ${agent.roleTitle} for "${project.title}".
+        `You are "${agent.roleTitle}" (your agent name is "${agent.name}") working on "${project.title}".
 
 ## Your Role
 ${roleDesc}
@@ -776,11 +823,12 @@ You just joined the team. Do ALL of these in this exact order:
 1. Call list_tickets ONCE (no filters) to see the full ticket board
 2. Pick an unassigned ticket matching YOUR skills — call update_ticket with ticket_id and status "in_progress"
 3. Add a detailed comment on that ticket explaining your implementation plan (add_comment)
-4. Post a message in chat introducing yourself and what you're working on (post_message)
+4. Post a message in chat introducing yourself as "${agent.roleTitle}" and what you're working on (post_message). Use your REAL role title, never use placeholder text like "[Your Name]".
 5. If you're a lead, write a knowledge entry about your department's technical approach (write_knowledge)
 
 IMPORTANT: The "id:" field in ticket listings is the UUID you need for update_ticket and add_comment.
-Do NOT call list_tickets more than once — you already have the full board.`,
+Do NOT call list_tickets more than once — you already have the full board.
+If a tool call fails, move on to the next action — do NOT retry the same call.`,
         'Call list_tickets once, pick up a ticket, add a comment with your plan, then introduce yourself in chat.',
         tools,
       );
@@ -824,7 +872,7 @@ Do NOT call list_tickets more than once — you already have the full board.`,
 
         await runAgentTurn(
           agent,
-          `You are ${agent.roleTitle} working on "${project.title}".
+          `You are "${agent.roleTitle}" (agent name: "${agent.name}") working on "${project.title}".
 
 ## Your Role
 ${roleDesc}${hasGitHubNote}
@@ -836,19 +884,23 @@ ${roleDesc}${hasGitHubNote}
 ${agent.roleLevel === 'project_manager' ? `**As PM, you MUST do these each turn:**
 - approve_ticket on ANY ticket with status "in_review" — approve ALL of them
 - If all tickets are in_review or done, create new tickets for remaining work
-- Post a status update in chat summarizing team progress` : agent.roleLevel === 'lead' ? `**As Lead, you MUST do these each turn:**
+- Post a status update in chat summarizing team progress (use your title "Project Manager", NOT placeholder text)` : agent.roleLevel === 'lead' ? `**As Lead, you MUST do these each turn:**
 - Pick up an unassigned ticket (update_ticket → in_progress) if you don't have one
 - Add detailed comments on your ticket with implementation analysis
 - Move your in_progress ticket to in_review when you've added thorough comments
 - Write knowledge entries about architecture decisions in your domain
-- Post coordination updates in chat` : `**As Worker, you MUST do these each turn:**
+- Post coordination updates in chat (use your title "${agent.roleTitle}", NOT placeholder text)` : `**As Worker, you MUST do these each turn:**
 - If you don't have a ticket: pick up an unassigned one (update_ticket → in_progress)
 - Add detailed comments showing your work: code snippets, implementation notes, testing results
 - When your work is documented in comments, move ticket to in_review
-- Post progress updates in chat`}
+- Post progress updates in chat (use your title "${agent.roleTitle}", NOT placeholder text)`}
 ${github && (agent.roleLevel === 'worker' || agent.roleLevel === 'lead') ? `- GitHub: create_branch → write_file → create_pull_request for code deliverables` : ''}
 
-CRITICAL: Do NOT call list_tickets more than once. Take 3-5 ACTIONS per turn (comments, updates, chat, knowledge). Make VISIBLE progress.`,
+CRITICAL RULES:
+- Do NOT call list_tickets more than once per turn.
+- Take 3-5 ACTIONS per turn (comments, updates, chat, knowledge). Make VISIBLE progress.
+- If a tool call returns an error, do NOT retry it — move on to a different action.
+- Never use placeholder text like "[Your Name]" — always use your role title "${agent.roleTitle}".`,
           'Call list_tickets once, then take multiple actions. Add comments, update statuses, post in chat. Make real progress.',
           tools,
           round,
