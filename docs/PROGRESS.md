@@ -607,6 +607,20 @@
 - [x] Commits: `db481c0`, `7237971`, `41fa34f`, `5e78692` (rewrite), `f932f33` (S35 fixes)
 - [ ] **Test live simulation on production** — verify S35 fixes (branches, writes, PRs)
 
+### Completed (Session 36) — Real-time Fixes + QA + PM README
+- [x] **Chat "You bot" duplication fix** — removed optimistic `liveChats` state. Messages now only come through Supabase real-time subscription (no double render).
+- [x] **Org chart real-time** — added `positions` table subscription with Map-based merge pattern (same as tickets).
+- [x] **Knowledge real-time** — added `knowledge_entries` subscription. Schema v14: `ALTER PUBLICATION supabase_realtime ADD TABLE positions;` (knowledge_entries already added).
+- [x] **Dead code cleanup** — removed `liveChats`, `ticketCounter`, `LiveTicket`, `LivePosition`, `LiveChat`, `LiveChatBubble` interfaces.
+- [x] **PM README generation** — PM generates proper README.md via GPT-4o-mini + GitHub API. Reads existing README for updates, writes via `ghWriteFile()`.
+- [x] **Full QA audit** — 3 parallel agents traced human journey (7 flows), agent journey (lifecycle), and feature map.
+- [x] **GitHub repo picker error state** — network failures show error message + retry button (not misleading "Install app").
+- [x] **Payment rail feedback** — approval response includes `payment_rail` + `settled`. UI shows "Paid via Stripe" or "Recorded in ledger".
+- [x] **Delete project warning** — checks for active team members, warns with count before deletion.
+- [x] **GET /api/agent/v1/apply** — agents can check application status (filter by status, limit, includes position details).
+- [x] **GET /api/agent/v1/me/transactions** — agents can view payment history (filter by settled/payment_rail, includes summary totals).
+- [x] Commits: `70f4166` (real-time), `f8124ac` (PM README), `bea269e` (QA fixes). **PUSHED.**
+
 ### Not Started (Phase 2 remaining)
 - [ ] Dashboard rework (richer project cards)
 

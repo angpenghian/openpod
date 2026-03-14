@@ -1,5 +1,53 @@
 # OpenPod — Chat Log
 
+## Session 36 (2026-03-15) — Full QA Audit + Real-time Fixes + Agent API Endpoints
+
+### What Happened
+- User confirmed **"finally there is some code going into github!"** — simulation GitHub integration working
+- User reported 3 workspace issues: chat "You bot" duplication, org chart not real-time, memory not real-time
+- User asked for full feature walkthrough and comprehensive QA audit
+- Ran 3 parallel research agents: human journey trace, agent API journey trace, full feature map
+- Fixed 8 issues across 6 files + created 2 new API endpoints
+
+### Fixes
+1. **Chat "You bot" duplication** (commit `70f4166`): Removed optimistic `liveChats` state that caused user messages to appear twice (once as "You bot", once as real user). Messages now only come through Supabase real-time subscription.
+2. **Org chart not real-time** (commit `70f4166`): Added `postgres_changes` subscription for `positions` table. New positions and status changes update instantly.
+3. **Memory not real-time** (commit `70f4166`): Added `postgres_changes` subscription for `knowledge_entries` table.
+4. **Schema v14** (commit `70f4166`): SQL migration to add `knowledge_entries` + `positions` to `supabase_realtime` publication.
+5. **PM writes README** (commit `f8124ac`): After planning phase, PM uses GPT-4o-mini to generate a professional README.md and writes to GitHub. Reads existing README for updates. Works for both empty and existing repos.
+6. **GitHub repo picker error state** (commit `bea269e`): Network failures now show proper error message with "Try again" button instead of misleading "Install GitHub App".
+7. **Payment rail feedback** (commit `bea269e`): Approval response includes `payment_rail` + `settled`. UI shows "Paid via Stripe" or "Recorded in ledger (agent has not set up Stripe payouts)".
+8. **Delete project safety** (commit `bea269e`): Checks for active team members before deletion, shows count in confirmation dialog.
+9. **GET /api/agent/v1/apply** (commit `bea269e`): Agents can check their application status. Filter by status (pending/accepted/rejected/withdrawn).
+10. **GET /api/agent/v1/me/transactions** (commit `bea269e`): Agents can view payment history with summary (total earned, commission, settled). Filter by payment_rail, settled status.
+
+### QA Audit Results
+- Human journey: 13 steps traced, 3 HIGH issues found (GitHub install flow, payment confirmation, position creation UI). 2 fixed this session.
+- Agent journey: 17 steps traced, 2 MEDIUM issues found (no application status check, no transaction history). Both fixed this session.
+- Security audit: All GREEN — SHA-256 key hashing, TOCTOU-safe double-approval, self-approval prevention, CSRF, SSRF protection, rate limiting.
+- Stripe onboarding check: Already exists in `settleStripeTransfer()` — validates `stripe_onboarded` before transfer.
+
+### Dead Code Cleanup
+- Removed: `LiveChatBubble` component, `LiveChat`/`LiveTicket`/`LivePosition` interfaces, `liveChats`/`liveTickets`/`ticketCounter` state, `onMessageSent` callback
+
+### Commits
+- `70f4166` — Fix real-time workspace: chat duplication, org chart + memory subscriptions
+- `f8124ac` — PM generates proper README.md after planning phase
+- `bea269e` — QA fixes: repo picker error state, payment rail feedback, delete warning, agent APIs
+
+### Files Changed (8 modified, 2 created)
+- `src/components/Project/WorkspaceLiveOverview.tsx` — 4 real-time subscriptions, dead code removal
+- `src/lib/simulation/orchestrator.ts` — PM README generation step
+- `src/app/projects/new/page.tsx` — GitHub repo picker error state
+- `src/components/Project/TicketDetail.tsx` — Payment rail feedback
+- `src/app/api/projects/[projectId]/tickets/[ticketId]/approve/route.ts` — Return payment_rail in response
+- `src/app/projects/[projectId]/settings/page.tsx` — Delete project team member warning
+- `src/app/api/agent/v1/apply/route.ts` — Added GET handler for application status
+- `src/app/api/agent/v1/me/transactions/route.ts` — **NEW** — Agent transaction history
+- `supabase/schema-v14.sql` — **NEW** — Realtime publication for knowledge_entries + positions
+
+---
+
 ## Session 35 (2026-03-15) — GitHub Simulation Fixes (Empty Repo, Branches, Leads)
 
 ### What Happened
