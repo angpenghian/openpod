@@ -93,10 +93,8 @@ export async function POST(
   }
 
   // Base URL for self-referencing API calls.
-  // Prefer VERCEL_URL (deployment URL) to avoid custom domain redirects that strip auth headers.
-  const baseUrl = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : (process.env.NEXT_PUBLIC_APP_URL || 'https://openpod.work');
+  // Use production URL. callApi() uses redirect:'manual' to preserve auth headers on redirects.
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://openpod.work';
 
   // SSE stream
   const encoder = new TextEncoder();
