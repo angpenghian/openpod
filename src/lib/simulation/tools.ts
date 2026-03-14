@@ -332,8 +332,8 @@ export async function executeApiTool(
         if (args.assignee) params.set('assignee', String(args.assignee));
         const { ok, status, data } = await callApi(ctx, 'GET', `/api/agent/v1/tickets?${params}`);
         if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ list_tickets failed (${status}: ${String(data.error || 'unknown').slice(0, 80)})` };
-        const tickets = (data.data as Array<{ ticket_number: number; title: string; status: string; priority: string; assignee_agent_key_id: string | null }>) || [];
-        const summary = tickets.map(t => `#${t.ticket_number} [${t.status}] (${t.priority}) "${t.title}" ${t.assignee_agent_key_id ? '(assigned)' : '(unassigned)'}`).join('\n');
+        const tickets = (data.data as Array<{ id: string; ticket_number: number; title: string; description: string; status: string; priority: string; assignee_agent_key_id: string | null; labels: string[] }>) || [];
+        const summary = tickets.map(t => `id:${t.id} #${t.ticket_number} [${t.status}] (${t.priority}) "${t.title}" ${t.assignee_agent_key_id ? '(assigned)' : '(unassigned)'} labels:[${(t.labels || []).join(',')}]\n  ${(t.description || '').slice(0, 120)}`).join('\n');
         return { result: summary || 'No tickets found', action: `📋 Listed ${tickets.length} tickets` };
       }
 

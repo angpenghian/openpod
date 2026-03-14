@@ -393,7 +393,7 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
     const ticketResponse = await openai.chat.completions.create({
       model: MODEL,
       messages: [
-        { role: 'system', content: `You are the Project Manager for "${project.title}".\n\n## Project Vision\n${project.description}\n\nThe team is being assembled. Now you need to:\n1. **Create 6-10 tickets** — Break the project into actionable work items. Each ticket needs a detailed description (50+ chars), acceptance criteria, and labels. Use priority: "critical" for must-haves, "high" for important, "medium" for nice-to-have.\n2. **Post in chat** — Introduce yourself and outline the project plan.\n3. **Write knowledge** — Document the architecture decisions, tech stack choices, and team plan.\n\nBe specific and actionable. Each ticket should be completable by one person.` },
+        { role: 'system', content: `You are the Project Manager for "${project.title}".\n\n## Project Vision\n${project.description}\n\nThe team is being assembled. Now you need to:\n1. **Create 6-10 tickets** — Break the project into actionable work items. Each ticket needs a detailed description (50+ chars), acceptance criteria, and labels. Use priority: "urgent" for must-haves, "high" for important, "medium" for nice-to-have.\n2. **Post in chat** — Introduce yourself and outline the project plan.\n3. **Write knowledge** — Document the architecture decisions, tech stack choices, and team plan.\n\nBe specific and actionable. Each ticket should be completable by one person.` },
         { role: 'user', content: 'Create the tickets, post your intro message, and write the knowledge doc. Call create_ticket multiple times, plus post_message and write_knowledge.' },
       ],
       tools: pmTicketTools,
@@ -536,18 +536,17 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
     // PHASE 4: Work Loop — agents take turns using real API + GitHub
     // ═══════════════════════════════════════════════════════════════════════
 
-    // Order: leads setup first, then workers, then work rounds cycle all
-    const sortedTeam = [
-      ...agents.filter(a => a.roleLevel === 'lead'),
-      ...agents.filter(a => a.roleLevel === 'worker'),
-    ];
+    // Multi-turn tool-calling loop: sends results back to OpenAI so it can
+    // see API responses and decide next actions (max 5 iterations per turn).
+    const MAX_TOOL_ITERATIONS = 5;
 
-    // Setup turns — each non-PM agent introduces itself
-    for (const agent of sortedTeam) {
-      if (isAborted()) break;
-
-      emit({ type: 'thinking', agent: agent.roleTitle, action: `⏳ ${agent.roleTitle} joining team...` });
-
+    async function runAgentTurn(
+      agent: SimulationAgent,
+      systemPrompt: string,
+      userMessage: string,
+      tools: typeof OPENPOD_TOOLS,
+      roundNum?: number,
+    ): Promise<void> {
       const toolCtx: ToolContext = {
         baseUrl,
         apiKey: agent.apiKey,
@@ -557,10 +556,70 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
         github,
       };
 
+      const messages: ChatCompletionMessageParam[] = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage },
+      ];
+
+      for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
+        if (isAborted()) return;
+
+        const response = await openai.chat.completions.create({
+          model: MODEL,
+          messages,
+          tools,
+          tool_choice: iter === 0 ? 'required' : 'auto', // Force first call, then let model decide
+          temperature: 0.7,
+        });
+
+        const choice = response.choices[0];
+
+        // If no tool calls, the agent is done for this turn
+        if (!choice.message.tool_calls || choice.message.tool_calls.length === 0) {
+          break;
+        }
+
+        // Append the assistant message (with tool_calls) to conversation
+        messages.push(choice.message);
+
+        // Execute each tool call and build result messages
+        for (const toolCall of choice.message.tool_calls) {
+          if (isAborted()) return;
+          if (toolCall.type !== 'function') continue;
+
+          const args = JSON.parse(toolCall.function.arguments);
+          const { result, action } = await executeApiTool(toolCall.function.name, args, toolCtx);
+
+          // Emit the human-readable action to SSE stream
+          emit({ type: 'action', agent: agent.roleTitle, action, round: roundNum });
+
+          // Send the actual result data back to OpenAI so it can act on it
+          messages.push({
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            content: result,
+          });
+        }
+      }
+    }
+
+    // ── Setup turns — each non-PM agent introduces itself and picks up work ──
+    const sortedTeam = [
+      ...agents.filter(a => a.roleLevel === 'lead'),
+      ...agents.filter(a => a.roleLevel === 'worker'),
+    ];
+
+    for (const agent of sortedTeam) {
+      if (isAborted()) break;
+
+      emit({ type: 'thinking', agent: agent.roleTitle, action: `⏳ ${agent.roleTitle} joining team...` });
+
       const roleDesc = getRoleDescription(agent.roleTitle, agent.roleLevel);
       const tools = getToolsForRole(agent.roleLevel, !!github);
 
-      const setupPrompt = `You are ${agent.roleTitle} for "${project.title}".
+      await runAgentTurn(
+        agent,
+        `You are ${agent.roleTitle} for "${project.title}".
 
 ## Your Role
 ${roleDesc}
@@ -569,125 +628,64 @@ ${roleDesc}
 ${project.description}
 
 You just joined the team. Your job:
-1. Say hi in chat briefly (mention your specific role and focus area)
-2. Look at the ticket board — pick up an unassigned ticket that matches YOUR skills (update status to in_progress)
-3. If you're a lead, write a knowledge entry about your department's approach
+1. Use list_tickets to see the ticket board
+2. Pick up an unassigned ticket that matches YOUR skills — call update_ticket with its id and status "in_progress"
+3. Say hi briefly in chat (post_message)
+4. If you're a lead, write a knowledge entry about your department's approach
 
-Be concise and professional. Stay in character for YOUR specific role.`;
-
-      const messages: ChatCompletionMessageParam[] = [
-        { role: 'system', content: setupPrompt },
-        { role: 'user', content: 'Take your actions now. Use list_tickets first to see available work, then take action. Call multiple tools.' },
-      ];
-
-      const response = await openai.chat.completions.create({
-        model: MODEL,
-        messages,
+IMPORTANT: When you see tickets from list_tickets, the "id:" field is the UUID you need for update_ticket's ticket_id parameter.`,
+        'Start by calling list_tickets to see available work, then pick up a ticket and introduce yourself.',
         tools,
-        tool_choice: 'required',
-        temperature: 0.7,
-      });
-
-      if (isAborted()) break;
-
-      const choice = response.choices[0];
-      if (choice.message.tool_calls) {
-        for (const toolCall of choice.message.tool_calls) {
-          if (isAborted()) break;
-          if (toolCall.type !== 'function') continue;
-          const args = JSON.parse(toolCall.function.arguments);
-          const { action } = await executeApiTool(toolCall.function.name, args, toolCtx);
-          emit({ type: 'action', agent: agent.roleTitle, action });
-        }
-      }
+      );
     }
 
     if (isAborted()) return;
 
-    // Work rounds — cycle through all agents (leads → workers → PM)
+    // ── Work rounds — cycle through all agents ──
     const workCycle = [
       ...agents.filter(a => a.roleLevel === 'lead'),
       ...agents.filter(a => a.roleLevel === 'worker'),
       pmAgent,
     ];
 
-    const setupRounds = 1 + sortedTeam.length; // PM + each team member
-    const workRounds = Math.max(0, maxRounds - setupRounds);
-
-    for (let round = 0; round < workRounds; round++) {
+    for (let round = 0; round < maxRounds; round++) {
       if (isAborted()) break;
 
-      const currentRound = round + setupRounds + 1;
       const agent = workCycle[round % workCycle.length];
-
-      emit({ type: 'round', agent: agent.roleTitle, action: `⏳ Working (round ${currentRound}/${maxRounds})...`, round: currentRound });
-
-      const toolCtx: ToolContext = {
-        baseUrl,
-        apiKey: agent.apiKey,
-        projectId,
-        agentKeyId: agent.id,
-        agentName: agent.name,
-        github,
-      };
+      emit({ type: 'round', agent: agent.roleTitle, action: `⏳ Working (round ${round + 1}/${maxRounds})...`, round: round + 1 });
 
       const roleDesc = agent.roleLevel === 'project_manager'
-        ? 'As PM: review completed work, coordinate the team, create tickets for gaps, approve finished tickets, track progress.'
+        ? 'As PM: review completed work, coordinate the team, create new tickets for gaps, approve finished tickets (approve_ticket), track progress.'
         : getRoleDescription(agent.roleTitle, agent.roleLevel);
 
       const tools = getToolsForRole(agent.roleLevel, !!github);
 
       const hasGitHubNote = github
-        ? `\n\nYou have access to the GitHub repo (${github.owner}/${github.repo}). Workers can create branches, write code files, and create PRs.`
+        ? `\n\nYou have access to the GitHub repo (${github.owner}/${github.repo}). Use create_branch, write_file, create_pull_request.`
         : '';
 
-      const workPrompt = `You are ${agent.roleTitle} working on "${project.title}".
+      await runAgentTurn(
+        agent,
+        `You are ${agent.roleTitle} working on "${project.title}".
 
 ## Your Role
 ${roleDesc}${hasGitHubNote}
 
-## What You Can Do
-- Pick up unassigned tickets that match YOUR skills (update status to in_progress)
-- Move your in-progress tickets forward (to in_review when ready)
-- If you're a lead or PM: review tickets in in_review — move to done or request changes
-- ${agent.roleLevel === 'project_manager' ? 'Use approve_ticket on completed tickets to finalize them' : 'Create new tickets if you identify important work in YOUR domain'}
-- Post updates, ask questions, or coordinate with teammates in chat
-- Write technical decisions, patterns, or knowledge to memory
-${github && (agent.roleLevel === 'worker' || agent.roleLevel === 'lead') ? `
-## GitHub Workflow
-1. create_branch with a descriptive name (feat/...)
-2. Use get_repo_structure and read_file to understand existing code
-3. Use write_file to commit code to your branch
-4. create_pull_request when your work is ready for review
-` : ''}
+## Instructions
+- First call list_tickets to see current state
+- Use the "id:" UUID from ticket listings when calling update_ticket, add_comment, or approve_ticket
+- Pick up unassigned tickets matching YOUR skills (update_ticket with status "in_progress")
+- Move your in-progress tickets forward: add comments with progress, then set status to "in_review" when ready
+- ${agent.roleLevel === 'project_manager' ? 'Use approve_ticket on tickets in "done" or "in_review" status to finalize them' : 'Leads: review in_review tickets, move to done. Workers: focus on your assigned tickets.'}
+- Post meaningful updates in chat (post_message)
+- Write technical docs to knowledge (write_knowledge)
+${github && (agent.roleLevel === 'worker' || agent.roleLevel === 'lead') ? `- GitHub: create_branch → write_file → create_pull_request` : ''}
 
-Stay in character for YOUR specific role. Focus on making real progress. Be concise.`;
-
-      const messages: ChatCompletionMessageParam[] = [
-        { role: 'system', content: workPrompt },
-        { role: 'user', content: 'Check the current state with list_tickets, then take your actions. Call multiple tools.' },
-      ];
-
-      const response = await openai.chat.completions.create({
-        model: MODEL,
-        messages,
+IMPORTANT: Actually DO work — don't just list tickets. Pick one up, work on it, update its status. Make real progress each turn.`,
+        'Call list_tickets first, then take action based on what you see. Make real progress.',
         tools,
-        tool_choice: 'required',
-        temperature: 0.7,
-      });
-
-      if (isAborted()) break;
-
-      const choice = response.choices[0];
-      if (choice.message.tool_calls) {
-        for (const toolCall of choice.message.tool_calls) {
-          if (isAborted()) break;
-          if (toolCall.type !== 'function') continue;
-          const args = JSON.parse(toolCall.function.arguments);
-          const { action } = await executeApiTool(toolCall.function.name, args, toolCtx);
-          emit({ type: 'action', agent: agent.roleTitle, action, round: currentRound });
-        }
-      }
+        round + 1,
+      );
 
       // Check if all tickets are done (but only if tickets exist)
       const { data: totalTickets } = await db
