@@ -280,14 +280,22 @@ async function callApi(
   const url = `${ctx.baseUrl}${path}`;
   const headers: Record<string, string> = {
     Authorization: `Bearer ${ctx.apiKey}`,
-    'Content-Type': 'application/json',
   };
+  if (body) {
+    headers['Content-Type'] = 'application/json';
+  }
   const res = await fetch(url, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
   });
-  const data = await res.json().catch(() => ({ error: 'Invalid response' }));
+  const text = await res.text();
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = { error: `Non-JSON response (${res.status}): ${text.slice(0, 200)}` };
+  }
   return { ok: res.ok, status: res.status, data };
 }
 
@@ -303,19 +311,19 @@ export async function executeApiTool(
         const params = new URLSearchParams({ project_id: ctx.projectId });
         if (args.status) params.set('status', String(args.status));
         if (args.assignee) params.set('assignee', String(args.assignee));
-        const { ok, data } = await callApi(ctx, 'GET', `/api/agent/v1/tickets?${params}`);
-        if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ Failed to list tickets` };
+        const { ok, status, data } = await callApi(ctx, 'GET', `/api/agent/v1/tickets?${params}`);
+        if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ list_tickets failed (${status}: ${String(data.error || 'unknown').slice(0, 80)})` };
         const tickets = (data.data as Array<{ ticket_number: number; title: string; status: string; priority: string; assignee_agent_key_id: string | null }>) || [];
         const summary = tickets.map(t => `#${t.ticket_number} [${t.status}] (${t.priority}) "${t.title}" ${t.assignee_agent_key_id ? '(assigned)' : '(unassigned)'}`).join('\n');
         return { result: summary || 'No tickets found', action: `📋 Listed ${tickets.length} tickets` };
       }
 
       case 'create_ticket': {
-        const { ok, data } = await callApi(ctx, 'POST', '/api/agent/v1/tickets', {
+        const { ok, status, data } = await callApi(ctx, 'POST', '/api/agent/v1/tickets', {
           project_id: ctx.projectId,
           ...args,
         });
-        if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ Failed to create ticket: ${args.title}` };
+        if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ create_ticket failed (${status}: ${String(data.error || 'unknown').slice(0, 80)})` };
         const ticket = data.data as { ticket_number: number; id: string };
         return { result: `Ticket #${ticket.ticket_number} created (id: ${ticket.id})`, action: `🎫 Created ticket #${ticket.ticket_number}: ${args.title}` };
       }
@@ -330,41 +338,41 @@ export async function executeApiTool(
         if (args.status === 'in_progress' && !args.assignee_agent_key_id) {
           updateBody.assignee_agent_key_id = ctx.agentKeyId;
         }
-        const { ok, data } = await callApi(ctx, 'PATCH', `/api/agent/v1/tickets/${ticketId}`, updateBody);
-        if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ Failed to update ticket` };
+        const { ok, status, data } = await callApi(ctx, 'PATCH', `/api/agent/v1/tickets/${ticketId}`, updateBody);
+        if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ update_ticket failed (${status}: ${String(data.error || 'unknown').slice(0, 80)})` };
         return { result: `Ticket updated`, action: `📋 Updated ticket → ${args.status || 'modified'}` };
       }
 
       case 'add_comment': {
         const ticketId = String(args.ticket_id);
-        const { ok, data } = await callApi(ctx, 'POST', `/api/agent/v1/tickets/${ticketId}/comments`, {
+        const { ok, status, data } = await callApi(ctx, 'POST', `/api/agent/v1/tickets/${ticketId}/comments`, {
           content: String(args.content),
         });
-        if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ Failed to add comment` };
+        if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ add_comment failed (${status}: ${String(data.error || 'unknown').slice(0, 80)})` };
         return { result: 'Comment added', action: `💬 Commented on ticket` };
       }
 
       case 'post_message': {
-        const { ok, data } = await callApi(ctx, 'POST', '/api/agent/v1/messages', {
+        const { ok, status, data } = await callApi(ctx, 'POST', '/api/agent/v1/messages', {
           project_id: ctx.projectId,
           content: String(args.content),
           channel_name: 'general',
         });
-        if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ Failed to post message` };
+        if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ post_message failed (${status}: ${String(data.error || 'unknown').slice(0, 80)})` };
         return { result: 'Message posted', action: `💬 Posted: ${String(args.content).slice(0, 80)}...` };
       }
 
       case 'read_messages': {
         const limit = Number(args.limit) || 20;
-        const { ok, data } = await callApi(ctx, 'GET', `/api/agent/v1/messages?project_id=${ctx.projectId}&limit=${limit}`);
-        if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ Failed to read messages` };
+        const { ok, status, data } = await callApi(ctx, 'GET', `/api/agent/v1/messages?project_id=${ctx.projectId}&limit=${limit}`);
+        if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ read_messages failed (${status}: ${String(data.error || 'unknown').slice(0, 80)})` };
         const messages = (data.data as Array<{ content: string; author_agent?: { name: string } }>) || [];
         const summary = messages.map(m => `[${m.author_agent?.name || 'Human'}]: ${m.content.slice(0, 100)}`).join('\n');
         return { result: summary || 'No messages', action: `📨 Read ${messages.length} messages` };
       }
 
       case 'write_knowledge': {
-        const { ok, data } = await callApi(ctx, 'POST', '/api/agent/v1/knowledge', {
+        const { ok, status, data } = await callApi(ctx, 'POST', '/api/agent/v1/knowledge', {
           project_id: ctx.projectId,
           title: String(args.title),
           content: String(args.content),
@@ -372,15 +380,15 @@ export async function executeApiTool(
           tags: args.tags || [],
           importance: String(args.importance || 'normal'),
         });
-        if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ Failed to write knowledge` };
+        if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ write_knowledge failed (${status}: ${String(data.error || 'unknown').slice(0, 80)})` };
         return { result: 'Knowledge entry saved', action: `🧠 Wrote knowledge: ${args.title}` };
       }
 
       case 'read_knowledge': {
         const params = new URLSearchParams({ project_id: ctx.projectId });
         if (args.category) params.set('category', String(args.category));
-        const { ok, data } = await callApi(ctx, 'GET', `/api/agent/v1/knowledge?${params}`);
-        if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ Failed to read knowledge` };
+        const { ok, status, data } = await callApi(ctx, 'GET', `/api/agent/v1/knowledge?${params}`);
+        if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ read_knowledge failed (${status}: ${String(data.error || 'unknown').slice(0, 80)})` };
         const entries = (data.data as Array<{ title: string; content: string; category: string }>) || [];
         const summary = entries.map(e => `[${e.category}] ${e.title}: ${e.content.slice(0, 200)}`).join('\n\n');
         return { result: summary || 'No knowledge entries', action: `📖 Read ${entries.length} knowledge entries` };
@@ -388,12 +396,12 @@ export async function executeApiTool(
 
       case 'approve_ticket': {
         const ticketId = String(args.ticket_id);
-        const { ok, data } = await callApi(ctx, 'POST', `/api/agent/v1/tickets/${ticketId}/approve`, {
+        const { ok, status, data } = await callApi(ctx, 'POST', `/api/agent/v1/tickets/${ticketId}/approve`, {
           action: 'approve',
           payout_cents: 100, // Nominal payout for simulation
           comment: String(args.comment || 'Approved by PM'),
         });
-        if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ Failed to approve ticket` };
+        if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ approve_ticket failed (${status}: ${String(data.error || 'unknown').slice(0, 80)})` };
         return { result: 'Ticket approved', action: `✅ Approved ticket` };
       }
 
