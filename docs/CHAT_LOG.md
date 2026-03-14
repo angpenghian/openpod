@@ -1,5 +1,118 @@
 # OpenPod — Chat Log
 
+## Session 34c (2026-03-15) — Simulation Quality Fixes (Labels, Loops, Roles)
+
+### What Happened
+- User ran live simulation and hit multiple issues: capability mismatch 400s, duplicate tickets, agent loops, "[Your Name]" placeholder, stale data from previous runs
+- Fixed ALL issues in one commit:
+  1. **Labels removed entirely** — stripped from create_ticket tool definition, create_ticket execution, update_ticket forwarded fields, list_tickets display
+  2. **Only PM creates tickets** — leads and workers restricted to working on existing tickets
+  3. **Phase 0 cleanup** — deactivates old sim keys, deletes stale positions, clears ticket labels before fresh simulation
+  4. **Agent name injection** — all prompts now include actual agent name/title, preventing "[Your Name]" placeholder text
+  5. **Error loop breaker** — consecutive error tracking breaks agent turn after 2 consecutive errors (prevents retry loops)
+  6. **Stronger prompts** — explicit "don't retry failed calls", "don't use placeholder text" rules
+- Knowledge entries confirmed visible in UI — no filtering on agent vs human creator. User just needs to navigate to Memory tab.
+- GitHub tools correctly gated by `!!github` — only appear when project has GitHub installation
+
+### Commits
+- `929cdf6` — Improve simulation quality: no-filter ticket listing, better prompts, fix lead→done 403
+- `e88f8f1` — Fix simulation quality: labels, prompts, error loops, role restrictions
+
+### Files Changed
+- `src/lib/simulation/orchestrator.ts` (Phase 0 cleanup, getToolsForRole, prompts, error tracking)
+- `src/lib/simulation/tools.ts` (labels stripped everywhere, create_ticket safety)
+
+---
+
+## Session 34b (2026-03-15) — Redirect Fix Attempts (401 Blocker)
+
+### What Happened
+- User tested live simulation on production — all API calls failed with `307: Cross-origin redirect rejected`
+- Root cause: Deep QA added same-origin check on redirect following in `callApi()`. Vercel's 307 redirects were being rejected.
+- **Fix attempt 1** (commit `fd36b32`): Changed `redirect: 'manual'` → `redirect: 'follow'`, removed manual redirect handling. Fixed 307 but ALL calls now fail with `401: Missing or invalid Authorization header` — `redirect:'follow'` strips auth headers per HTTP spec.
+- **Fix attempt 2** (commit `a55e489`): Back to `redirect: 'manual'` with manual redirect that re-sends auth headers to redirect target. **Still 401** — likely because the second `fetch` uses `redirect: 'follow'` which strips auth on any further redirect hop.
+- **BLOCKER**: Simulation API calls all fail with 401. Need to either: (a) fix the redirect chain to never strip auth, or (b) prevent Vercel redirects entirely (trailing slashes, next.config.js).
+
+### Commits
+- `fd36b32` — Fix: redirect follow for simulation API calls (was rejecting 307s)
+- `a55e489` — Fix: manual redirect follow to preserve Authorization header
+
+### Files Changed
+- `src/lib/simulation/tools.ts` (callApi function rewritten twice)
+
+---
+
+## Session 34 (2026-03-15) — Live LLM Simulation + Real-Time Subscriptions + Deep QA (25+ fixes)
+
+### What Happened
+- Built live LLM-powered simulation (5 new files + 3 modified) — GPT-4o-mini agents making real API calls + GitHub code writing
+- Tested on fresh project: found no workers created (PM only makes leads) + round counter was per-agent not per-cycle
+- Fixed worker creation (follow-up OpenAI call) + round counter (nested loop: outer=rounds, inner=agents)
+- Added Supabase real-time subscriptions to WorkspaceLiveOverview for live ticket + chat updates during simulation
+- User requested deep QA — found and fixed 25+ issues across all 6 simulation files
+- 3 commits pushed to main
+
+### Live Simulation Architecture (5 new files)
+1. **`src/lib/simulation/orchestrator.ts`** (~600 lines) — Core loop: agent registry, turn management, OpenAI calls, context assembly, completion detection
+2. **`src/lib/simulation/tools.ts`** (~350 lines) — 15 OpenAI function-calling tool definitions + `executeApiTool()` making real HTTP calls to `/api/agent/v1/*`
+3. **`src/lib/simulation/github-tools.ts`** (~240 lines) — GitHub REST API helpers: list tree, read file, create branch, write file, create PR
+4. **`src/app/api/projects/[projectId]/simulate-live/route.ts`** (~160 lines) — SSE endpoint with admin guards
+5. **`src/components/Project/LiveSimulationPanel.tsx`** (~280 lines) — Client: SSE reader, activity feed, round counter, stop/reset buttons
+
+### Key Fixes
+- **Worker creation guarantee**: Follow-up OpenAI call after position creation detects missing workers and creates 3-5
+- **Round counter**: Changed from `round % workCycle.length` to nested loop (all agents = 1 round)
+- **Real-time subscriptions**: WorkspaceLiveOverview now has `postgres_changes` for messages (INSERT) and tickets (INSERT + UPDATE)
+- **Dead code fix**: Message handler was always returning `prev` unchanged — fixed with ref-based Set deduplication
+- **Ticket UPDATE merge**: Was discarding updates for initialTickets — fixed by always upserting into realtimeTickets
+
+### Deep QA Fixes (25+ issues)
+**Security:**
+- `crypto.randomBytes` replacing `Math.random()` for API key generation
+- Same-origin check on redirect following (prevents auth header leaking)
+- Path traversal validation + branch name sanitization in GitHub tools
+- Token references stripped from error messages
+- Agent/action string truncation to prevent prompt injection display
+- ILIKE wildcard escaping for position lookups
+
+**Reliability:**
+- Guard all 4 `JSON.parse(toolCall.function.arguments)` calls with try-catch
+- Per-agent error isolation (one agent failing doesn't crash simulation)
+- Track all created key IDs with `allCreatedKeyIds` array for guaranteed cleanup
+- `Promise.allSettled` for cleanup (no single failure blocks others)
+- 30s fetch timeout on API calls, 60s on OpenAI
+- keepAlive interval try-catch
+- Error event sent on crash via `.catch()` before `.finally()`
+
+**Resource Management:**
+- Event array capped at 500 in client
+- File size guard (1MB max) in GitHub read
+- AbortController cleanup on unmount
+- Process remaining SSE buffer after reader loop
+- `maxDuration = 300` export for Vercel
+
+**Bug Fixes:**
+- Fixed Supabase `.not` filter syntax from `'("done","cancelled")'` to `'(done,cancelled)'`
+- `update_ticket` now forwards all valid fields (was only status)
+- `approve_ticket` payout set to 0 (simulation projects unfunded)
+- Memoized `ticketsDone` and `allPositions` computations
+- Fixed unstable `new Date()` in render
+
+### Commits
+- `7185a94` — Fix: force worker creation + round counter per-cycle
+- `b2aa79b` — Add Supabase real-time subscriptions for live ticket + chat updates
+- `2b3b4e3` — Deep QA: 25+ security and reliability fixes across simulation stack (6 files, 258+/114-)
+
+### Files Changed
+- `src/lib/simulation/orchestrator.ts` (heavy modifications)
+- `src/lib/simulation/tools.ts` (callApi rewrite, field forwarding, payout fix)
+- `src/lib/simulation/github-tools.ts` (full security rewrite)
+- `src/app/api/projects/[projectId]/simulate-live/route.ts` (error handling, maxDuration)
+- `src/components/Project/LiveSimulationPanel.tsx` (full rewrite with cleanup/capping/reset)
+- `src/components/Project/WorkspaceLiveOverview.tsx` (real-time subscriptions, dead code fix, ticket merge)
+
+---
+
 ## Session 33 (2026-03-14) — FundProjectButton + SetupPayoutsButton + Admin Simulation + Deep QA Rounds 8-10
 
 ### What Happened

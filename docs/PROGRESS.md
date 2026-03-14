@@ -556,6 +556,40 @@
 - [x] 0 TypeScript errors, clean build
 - [x] **133+ total fixes across 10 rounds. All CRITICAL resolved.**
 
+### Completed (Session 34) — Live LLM Simulation + Real-Time Subscriptions + Deep QA
+- [x] **Live LLM simulation** — GPT-4o-mini agents using real API calls + GitHub code writing
+  - `src/lib/simulation/orchestrator.ts` — Core loop: agent registry, turn management, multi-turn OpenAI function calling, completion detection
+  - `src/lib/simulation/tools.ts` — 15 tool definitions (9 OpenPod + 6 GitHub) + `executeApiTool()` with real HTTP calls
+  - `src/lib/simulation/github-tools.ts` — GitHub REST helpers (tree, read, branch, write, PR) with full security hardening
+  - `src/app/api/projects/[projectId]/simulate-live/route.ts` — SSE endpoint, dual admin guard, maxDuration=300
+  - `src/components/Project/LiveSimulationPanel.tsx` — SSE reader, activity feed, round counter, stop/reset
+- [x] **Worker creation fix** — Follow-up OpenAI call after PM creates leads, ensures 3-5 workers created
+- [x] **Round counter fix** — Changed from per-agent to per-cycle (nested loop: all agents take a turn = 1 round)
+- [x] **Real-time Supabase subscriptions** — `postgres_changes` on messages (INSERT) and tickets (INSERT + UPDATE) in WorkspaceLiveOverview
+- [x] **Deep QA (25+ fixes):**
+  - Security: `crypto.randomBytes`, same-origin redirect check, path traversal validation, branch name sanitization, token stripping, ILIKE escape, string truncation
+  - Reliability: JSON.parse guards (4 locations), per-agent error isolation, `allCreatedKeyIds` tracking, `Promise.allSettled` cleanup, 30s/60s fetch timeouts
+  - Resource: 500 event cap, 1MB file guard, AbortController cleanup, SSE buffer processing, maxDuration=300
+  - Bugs: Supabase `.not` filter syntax, update_ticket field forwarding, approve_ticket payout=0, dead code in message handler, ticket UPDATE merge, memoized computations
+- [x] Commits: `7185a94`, `b2aa79b`, `2b3b4e3` — pushed to main
+- [x] 6 files changed (5 new, 3 modified heavily)
+- [x] 0 TypeScript errors
+
+### In Progress (Session 34b) — Redirect/Auth Fix
+- [ ] **BLOCKER: Live simulation 401 on production** — Vercel 307 redirects strip Authorization header from `callApi()`
+  - Fix attempt 1 (`fd36b32`): `redirect: 'follow'` — fixed 307 but caused 401 (auth stripped by spec)
+  - Fix attempt 2 (`a55e489`): manual redirect with auth re-send — still 401 (second fetch uses `redirect:'follow'`)
+  - **FIXED** (`c461d38`): 5-hop manual redirect loop with `redirect:'manual'` on all hops. User also flipped Vercel domains (openpod.work = primary).
+- [x] ~~Scripted simulation (S33) still works~~ Live simulation also works now
+- [x] Simulation quality fixes (`929cdf6` + `e88f8f1`):
+  - [x] Labels removed entirely from simulation (prevents capability mismatch 400s)
+  - [x] Only PM creates tickets (leads/workers restricted)
+  - [x] Phase 0 cleanup (old sim data cleared before fresh run)
+  - [x] Agent name injection in prompts (no more "[Your Name]" placeholder)
+  - [x] Error loop breaker (2 consecutive errors → break)
+  - [x] Stronger role-specific prompts with explicit rules
+- [ ] **Test live simulation on production** — verify S34c fixes end-to-end
+
 ### Not Started (Phase 2 remaining)
 - [ ] Dashboard rework (richer project cards)
 
