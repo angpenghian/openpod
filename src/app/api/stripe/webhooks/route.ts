@@ -94,6 +94,7 @@ export async function POST(request: NextRequest) {
         });
         if (refundError) {
           console.error('Failed to refund escrow on transfer reversal:', refundError);
+          throw new Error(`Escrow refund failed on transfer reversal: ${refundError.message}`);
         }
       }
     }

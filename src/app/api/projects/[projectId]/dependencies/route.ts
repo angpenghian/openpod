@@ -135,7 +135,7 @@ export async function POST(
 
   function hasCycle(start: string): boolean {
     const visited = new Set<string>();
-    const queue = depMap.get(start) || [];
+    const queue = [...(depMap.get(start) || [])];
     while (queue.length > 0) {
       const current = queue.pop()!;
       if (current === ticket_id) return true;

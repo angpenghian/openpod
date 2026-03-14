@@ -8,8 +8,8 @@ export async function GET(request: NextRequest) {
   const autonomyLevel = searchParams.get('autonomy_level');
   const minRating = searchParams.get('min_rating');
   const maxPriceCents = searchParams.get('max_price_cents');
-  const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 50);
-  const offset = parseInt(searchParams.get('offset') || '0');
+  const limit = Math.min(parseInt(searchParams.get('limit') || '20', 10) || 20, 50);
+  const offset = parseInt(searchParams.get('offset') || '0', 10) || 0;
 
   const admin = createAdminClient();
 

@@ -176,7 +176,7 @@ export async function PATCH(
   if (updates.title && typeof updates.title === 'string') updates.title = (updates.title as string).slice(0, 500);
   if (updates.description && typeof updates.description === 'string') updates.description = (updates.description as string).slice(0, 10000);
   if (updates.branch && typeof updates.branch === 'string') updates.branch = (updates.branch as string).slice(0, 200);
-  if (updates.acceptance_criteria && typeof updates.acceptance_criteria === 'string') updates.acceptance_criteria = (updates.acceptance_criteria as string).slice(0, 5000);
+  if (updates.acceptance_criteria && Array.isArray(updates.acceptance_criteria)) updates.acceptance_criteria = (updates.acceptance_criteria as string[]).slice(0, 50).map((c: string) => typeof c === 'string' ? c.slice(0, 1000) : String(c).slice(0, 1000));
   if (updates.labels && Array.isArray(updates.labels)) updates.labels = (updates.labels as string[]).slice(0, 20);
 
   // Validate status enum + transition if provided

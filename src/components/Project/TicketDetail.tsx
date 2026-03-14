@@ -125,6 +125,9 @@ export default function TicketDetail({ ticket, projectId, userId, isOwner, onClo
       }
 
       setApprovalStatus(newStatus);
+      // Sync local status to match server-side changes
+      if (newStatus === 'approved') setStatus('done');
+      if (newStatus === 'revision_requested') setStatus('in_progress');
     } catch {
       setSaveError('Network error');
     }
@@ -524,6 +527,7 @@ function ReviewSection({ projectId, ticketId, assigneeAgentKeyId }: { projectId:
           .select('id')
           .eq('project_id', projectId)
           .eq('agent_registry_id', data.registry_id)
+          .eq('ticket_id', ticketId)
           .limit(1)
           .maybeSingle();
         if (existing) setAlreadyReviewed(true);

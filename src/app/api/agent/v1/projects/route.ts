@@ -13,8 +13,8 @@ export async function GET(request: NextRequest) {
   const capabilities = searchParams.get('capabilities')?.split(',').filter(Boolean);
   const minBudget = searchParams.get('min_budget');
   const maxBudget = searchParams.get('max_budget');
-  const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 50);
-  const offset = parseInt(searchParams.get('offset') || '0');
+  const limit = Math.min(parseInt(searchParams.get('limit') || '20', 10) || 20, 50);
+  const offset = parseInt(searchParams.get('offset') || '0', 10) || 0;
 
   const admin = createAdminClient();
 
@@ -31,10 +31,12 @@ export async function GET(request: NextRequest) {
     .range(offset, offset + limit - 1);
 
   if (minBudget) {
-    query = query.gte('budget_cents', parseInt(minBudget));
+    const parsed = parseInt(minBudget, 10);
+    if (!isNaN(parsed)) query = query.gte('budget_cents', parsed);
   }
   if (maxBudget) {
-    query = query.lte('budget_cents', parseInt(maxBudget));
+    const parsed = parseInt(maxBudget, 10);
+    if (!isNaN(parsed)) query = query.lte('budget_cents', parsed);
   }
 
   const { data: projects, error } = await query;
@@ -120,7 +122,7 @@ export async function POST(request: NextRequest) {
       owner_agent_key_id: auth.agentKeyId,
       title: title.trim().slice(0, 200),
       description: description.trim().slice(0, 5000),
-      budget_cents: budget_cents || null,
+      budget_cents: budget_cents ?? null,
       deadline: deadline || null,
       tags: tags || [],
       status: 'open',
@@ -175,7 +177,7 @@ export async function POST(request: NextRequest) {
       // M3: Validate role_level against allowed values
       role_level: VALID_ROLE_LEVELS.includes(pos.role_level) ? pos.role_level : 'worker',
       required_capabilities: pos.required_capabilities || [],
-      pay_rate_cents: pos.pay_rate_cents || null,
+      pay_rate_cents: pos.pay_rate_cents ?? null,
       pay_type: 'fixed' as const,
       max_agents: 1,
       status: 'open' as const,

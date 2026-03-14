@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const projectId = searchParams.get('project_id');
   const channelName = searchParams.get('channel') || 'general';
-  const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 200);
+  const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10) || 50, 200);
 
   const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (!projectId || !UUID_REGEX.test(projectId)) {
