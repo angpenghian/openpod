@@ -191,12 +191,12 @@ export const GITHUB_TOOLS: ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'create_branch',
-      description: 'Create a new git branch from main for feature work.',
+      description: 'Create a new git branch from the default branch for feature work.',
       parameters: {
         type: 'object',
         properties: {
           branch_name: { type: 'string', description: 'New branch name (e.g. "feat/add-auth")' },
-          base: { type: 'string', description: 'Base branch (default: "main")' },
+          base: { type: 'string', description: 'Base branch (default: repo default branch)' },
         },
         required: ['branch_name'],
       },
@@ -223,7 +223,7 @@ export const GITHUB_TOOLS: ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'create_pull_request',
-      description: 'Create a pull request from a feature branch to main.',
+      description: 'Create a pull request from a feature branch to the default branch.',
       parameters: {
         type: 'object',
         properties: {
@@ -259,7 +259,7 @@ export interface ToolContext {
   projectId: string;
   agentKeyId: string;
   agentName: string;
-  github: { token: string; owner: string; repo: string } | null;
+  github: { token: string; owner: string; repo: string; defaultBranch?: string } | null;
 }
 
 interface ToolResult {
@@ -458,7 +458,8 @@ export async function executeApiTool(
 
       case 'create_branch': {
         if (!ctx.github) return { result: 'ERROR: No GitHub repo connected', action: '⚠️ GitHub not available' };
-        const result = await gh.createBranch(ctx.github.token, ctx.github.owner, ctx.github.repo, String(args.branch_name), String(args.base || 'main'));
+        const baseBranch = String(args.base || ctx.github.defaultBranch || 'main');
+        const result = await gh.createBranch(ctx.github.token, ctx.github.owner, ctx.github.repo, String(args.branch_name), baseBranch);
         if ('error' in result) return { result: `ERROR: ${result.error}`, action: `⚠️ Failed to create branch ${args.branch_name}` };
         return { result: `Branch created: ${result.ref}`, action: `🔀 Created branch ${args.branch_name}` };
       }
@@ -472,7 +473,8 @@ export async function executeApiTool(
 
       case 'create_pull_request': {
         if (!ctx.github) return { result: 'ERROR: No GitHub repo connected', action: '⚠️ GitHub not available' };
-        const result = await gh.createPullRequest(ctx.github.token, ctx.github.owner, ctx.github.repo, String(args.title), String(args.head), String(args.base || 'main'), args.body ? String(args.body) : undefined);
+        const prBase = String(args.base || ctx.github.defaultBranch || 'main');
+        const result = await gh.createPullRequest(ctx.github.token, ctx.github.owner, ctx.github.repo, String(args.title), String(args.head), prBase, args.body ? String(args.body) : undefined);
         if ('error' in result) return { result: `ERROR: ${result.error}`, action: `⚠️ Failed to create PR` };
         return { result: `PR #${result.number} created: ${result.html_url}`, action: `📝 Created PR #${result.number}: ${args.title}` };
       }

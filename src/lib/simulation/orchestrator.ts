@@ -44,7 +44,7 @@ export interface SimulationConfig {
   baseUrl: string;
   openaiApiKey: string;
   userId: string;
-  github: { token: string; owner: string; repo: string; installationId: number } | null;
+  github: { token: string; owner: string; repo: string; installationId: number; defaultBranch?: string } | null;
   onEvent: (event: SimulationEvent) => void;
   signal: AbortSignal;
 }
@@ -166,15 +166,53 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
     }
   }, 25_000);
 
-  // Validate GitHub connection before providing tools to agents
+  // Validate GitHub connection, detect default branch, initialize empty repos
   let validatedGitHub = github;
   if (github) {
     try {
-      const testRes = await fetch(`https://api.github.com/repos/${github.owner}/${github.repo}`, {
+      const repoRes = await fetch(`https://api.github.com/repos/${github.owner}/${github.repo}`, {
         headers: { Authorization: `Bearer ${github.token}`, Accept: 'application/vnd.github+json' },
       });
-      if (!testRes.ok) {
+      if (!repoRes.ok) {
         validatedGitHub = null; // GitHub connection broken — disable GitHub tools
+      } else {
+        const repoData = await repoRes.json();
+        const defaultBranch = repoData.default_branch || 'main';
+        validatedGitHub = { ...github, defaultBranch };
+
+        // Check if repo is empty (no commits → default branch ref doesn't exist)
+        const refRes = await fetch(
+          `https://api.github.com/repos/${github.owner}/${github.repo}/git/ref/heads/${defaultBranch}`,
+          { headers: { Authorization: `Bearer ${github.token}`, Accept: 'application/vnd.github+json' } },
+        );
+        if (!refRes.ok && refRes.status === 404) {
+          // Empty repo — initialize with README so branches can be created
+          emit({ type: 'system', agent: 'System', action: '📄 Initializing empty repo with README...' });
+          const initRes = await fetch(
+            `https://api.github.com/repos/${github.owner}/${github.repo}/contents/README.md`,
+            {
+              method: 'PUT',
+              headers: {
+                Authorization: `Bearer ${github.token}`,
+                Accept: 'application/vnd.github+json',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                message: 'Initial commit — OpenPod simulation',
+                content: Buffer.from(`# ${project.title}\n\n${project.description || 'Project initialized by OpenPod simulation.'}\n`).toString('base64'),
+              }),
+            },
+          );
+          if (!initRes.ok) {
+            const errText = await initRes.text();
+            emit({ type: 'error', agent: 'System', action: `⚠️ Failed to init repo: ${errText.slice(0, 100)}` });
+            validatedGitHub = null;
+          } else {
+            emit({ type: 'system', agent: 'System', action: '✅ Repo initialized with README' });
+          }
+        } else if (!refRes.ok) {
+          await refRes.text(); // consume body
+        }
       }
     } catch {
       validatedGitHub = null;
@@ -884,7 +922,7 @@ If a tool call fails, move on to the next action — do NOT retry the same call.
         const tools = getToolsForRole(agent.roleLevel, !!validatedGitHub);
 
         const hasGitHubNote = validatedGitHub
-          ? `\n\nYou have access to the GitHub repo (${validatedGitHub.owner}/${validatedGitHub.repo}). Use create_branch, write_file, create_pull_request.`
+          ? `\n\nYou have access to the GitHub repo (${validatedGitHub.owner}/${validatedGitHub.repo}). Default branch: "${validatedGitHub.defaultBranch || 'main'}". Use create_branch, write_file, create_pull_request to write REAL code.`
           : '';
 
         await runAgentTurn(
@@ -912,7 +950,7 @@ ${agent.roleLevel === 'project_manager' ? `**As PM, you MUST do these each turn:
 - When your implementation is documented in comments, move your ticket to in_review
 - Post progress updates in chat (use your title "${agent.roleTitle}", NOT placeholder text)
 - Do NOT try to update tickets marked "🔒 taken by another agent" — you will get a 403 error`}
-${validatedGitHub && (agent.roleLevel === 'worker' || agent.roleLevel === 'lead') ? `- GitHub: create_branch → write_file → create_pull_request for code deliverables` : (agent.roleLevel === 'worker' ? `- Since there is no GitHub repo connected, write your implementation code DIRECTLY in ticket comments using markdown code blocks` : '')}
+${validatedGitHub && (agent.roleLevel === 'worker' || agent.roleLevel === 'lead') ? `- **GitHub workflow (REQUIRED for code work):** create_branch("feat/your-feature") → write_file(path, content, branch, message) → create_pull_request(title, head_branch). Default branch: "${validatedGitHub.defaultBranch || 'main'}". Write REAL implementation code in files.` : (agent.roleLevel === 'worker' ? `- No GitHub connected — write your implementation code DIRECTLY in ticket comments using markdown code blocks` : '')}
 
 CRITICAL RULES:
 - Do NOT call list_tickets more than once per turn.
