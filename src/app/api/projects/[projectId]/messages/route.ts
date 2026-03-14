@@ -2,12 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { fireWebhooks } from '@/lib/webhooks';
+import { checkCsrfOrigin } from '@/lib/csrf';
 
 // POST /api/projects/[projectId]/messages — Human sends a chat message (fires webhooks)
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
+  const csrfError = checkCsrfOrigin(request);
+  if (csrfError) return csrfError;
+
   const { projectId } = await params;
 
   // Auth: verify logged-in user

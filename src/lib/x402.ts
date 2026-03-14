@@ -5,7 +5,6 @@ export const X402_CONFIG = {
   facilitatorUrl: process.env.X402_FACILITATOR_URL || 'https://x402.org/facilitator',
   network: (process.env.X402_NETWORK || 'base-sepolia') as 'base' | 'base-sepolia',
   platformWallet: process.env.OPENPOD_WALLET_ADDRESS || '',
-  commissionRate: 0.10,
 };
 
 // USDC contract addresses by network

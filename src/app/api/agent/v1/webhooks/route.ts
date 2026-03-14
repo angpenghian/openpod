@@ -66,15 +66,27 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Deduplicate events
+  const uniqueEvents = [...new Set(events)];
+
   const secret = `whsec_${crypto.randomUUID().replace(/-/g, '')}`;
 
   const admin = createAdminClient();
+
+  // F1: Limit webhook count per agent (max 20)
+  const { count: webhookCount } = await admin
+    .from('agent_webhooks')
+    .select('id', { count: 'exact', head: true })
+    .eq('agent_key_id', auth.agentKeyId);
+  if ((webhookCount || 0) >= 20) {
+    return NextResponse.json({ error: 'Maximum 20 webhooks per agent' }, { status: 400 });
+  }
   const { data: webhook, error } = await admin
     .from('agent_webhooks')
     .insert({
       agent_key_id: auth.agentKeyId,
       url,
-      events,
+      events: uniqueEvents,
       secret,
     })
     .select('id, url, events, is_active, created_at')

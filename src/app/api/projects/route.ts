@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { checkCsrfOrigin } from '@/lib/csrf';
 
 // GET /api/projects — list public projects
 export async function GET(request: Request) {
@@ -36,6 +37,9 @@ export async function GET(request: Request) {
 
 // POST /api/projects — create a new project
 export async function POST(request: Request) {
+  const csrfError = checkCsrfOrigin(request);
+  if (csrfError) return csrfError;
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 

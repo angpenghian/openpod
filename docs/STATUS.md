@@ -1,6 +1,6 @@
 # OpenPod — Status
 
-## Current Phase: Session 32e — Deep QA Round 5 complete (79 total fixes across 5 rounds). Schema v11 deployed, v12+v13 pending. Pending: schema-v12+v13 apply, x402 wallet, test payments, seed content.
+## Current Phase: Session 32e — Deep QA Round 5 complete (79 total fixes across 5 rounds). Schema v5-v13 ALL deployed. Pending: x402 wallet, test payments, seed content.
 
 ## Positioning (REVISED Session 28)
 **Human-first:** "Post your project. AI agents build it." — full workspace for managing AI agent teams.
@@ -32,7 +32,7 @@
 - **Session 32e:** Deep QA round 5: 3 CRITICAL + 9 HIGH + 8 MEDIUM fixed. Schema v13 written. 18 files.
 
 ### Infrastructure
-- Schema v5-v11 deployed on Supabase, v12+v13 pending apply
+- Schema v5-v13 ALL deployed on Supabase
 - **Stripe Connect** — live mode, Marketplace model, Express accounts, webhook destination (4 events)
 - GitHub App: OpenPod-Work (App ID: 3082144)
 - GitHub repo: github.com/angpenghian/openpod
@@ -57,7 +57,6 @@
 - No demo/seed content to show it works
 - Resend account pending reactivation (emails silently skip)
 - 0/0/0 stats on homepage actively hurting credibility
-- **Schema v12+v13 not yet applied** — SQL statements pending in Supabase SQL Editor
 - Stripe Connect "Go live" checklist not fully completed (identity verification etc.)
 
 ## Remaining Known Issues (LOW — deferred)
@@ -76,21 +75,19 @@
 - **No demo moment** — can't show a visitor what a working project looks like
 
 ## Next Steps (Session 33+)
-1. **Apply schema-v12.sql + schema-v13.sql** — SQL statements in Supabase SQL Editor
-2. **Create platform wallet** — Ethereum address for x402 commission, add to Vercel env
-3. **Complete Stripe Go Live** — finish identity verification checklist in Stripe dashboard
-4. **Test payment flows** — Fund project → approve ticket → Stripe transfer; Agent delegate → 402 → USDC settle
-5. **Seed demo content** — solve the 0/0/0 problem
-6. **Promote** — OpenClaw Discord, awesome-openclaw-skills PR, seed demo content
+1. **Create platform wallet** — Ethereum address for x402 commission, add to Vercel env
+2. **Complete Stripe Go Live** — finish identity verification checklist in Stripe dashboard
+3. **Test payment flows** — Fund project → approve ticket → Stripe transfer; Agent delegate → 402 → USDC settle
+4. **Seed demo content** — solve the 0/0/0 problem
+5. **Promote** — OpenClaw Discord, awesome-openclaw-skills PR, seed demo content
 
 ## Roadmap
 
 ### Immediate
-1. Apply schema-v12.sql + schema-v13.sql in Supabase
-2. Configure x402 (wallet + env vars)
-3. Complete Stripe Go Live checklist
-4. Test both payment flows end-to-end
-5. Seed demo content (solve 0/0/0 problem)
+1. Configure x402 (wallet + env vars)
+2. Complete Stripe Go Live checklist
+3. Test both payment flows end-to-end
+4. Seed demo content (solve 0/0/0 problem)
 
 ### Phase 4: Growth
 - Show HN launch post

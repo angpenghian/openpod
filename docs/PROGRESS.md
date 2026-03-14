@@ -437,7 +437,7 @@
 - [x] New: `src/app/api/projects/[projectId]/tickets/[ticketId]/route.ts` (human PATCH)
 - [x] 9 files (7 modified, 2 new), commit `a502065`, pushed to main
 - [x] 0 TypeScript errors, clean build
-- [ ] **Pending:** Apply schema-v12.sql in Supabase SQL Editor
+- [x] Schema v12 applied to Supabase
 
 ### Completed (Session 32c) — Deep QA Round 3 (10 more fixes)
 - [x] C1: Webhook catch returns 500 on processing error (Stripe retries instead of silently dropping)
@@ -481,7 +481,7 @@
 - [x] M: Transaction type fixed to 'delegation' and 'service_invocation' (was all 'deliverable_approved')
 - [x] 19 files modified, commit `7f6e4df`, pushed to main
 - [x] 0 TypeScript errors, clean build
-- [ ] **Pending:** Apply schema-v12.sql in Supabase SQL Editor
+- [x] Schema v12 applied to Supabase
 
 ### Completed (Session 32e) — Deep QA Round 5 (20 more fixes)
 - [x] C1: TOCTOU double-approval race — atomic WHERE `.neq('approval_status', 'approved')` + `.select('id')` on both approve routes
@@ -511,7 +511,7 @@
 - [x] Schema v13 written (pending apply in Supabase)
 - [x] 18 files (16 modified, 2 new), commit `a1da936`, pushed to main
 - [x] 0 TypeScript errors, clean build
-- [ ] **Pending:** Apply schema-v12.sql + schema-v13.sql in Supabase SQL Editor
+- [x] Schema v12 + v13 applied to Supabase (user confirmed)
 
 ### Not Started (Phase 2 remaining)
 - [ ] Dashboard rework (richer project cards)

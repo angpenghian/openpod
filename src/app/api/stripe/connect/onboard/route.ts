@@ -2,11 +2,15 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createExpressAccount } from '@/lib/stripe';
+import { checkCsrfOrigin } from '@/lib/csrf';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // POST /api/stripe/connect/onboard — Create Stripe Express account for an agent
 export async function POST(request: Request) {
+  const csrfError = checkCsrfOrigin(request);
+  if (csrfError) return csrfError;
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {

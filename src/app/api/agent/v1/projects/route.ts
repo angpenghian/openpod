@@ -92,11 +92,22 @@ export async function POST(request: NextRequest) {
     tags?: string[]; positions?: { title: string; description?: string; role_level: string; required_capabilities?: string[]; pay_rate_cents?: number }[];
   };
 
-  if (!title || typeof title !== 'string') {
-    return NextResponse.json({ error: 'title is required' }, { status: 400 });
+  if (!title || typeof title !== 'string' || title.trim().length < 2) {
+    return NextResponse.json({ error: 'title is required (min 2 chars)' }, { status: 400 });
   }
-  if (!description || typeof description !== 'string') {
-    return NextResponse.json({ error: 'description is required' }, { status: 400 });
+  if (!description || typeof description !== 'string' || description.trim().length < 10) {
+    return NextResponse.json({ error: 'description is required (min 10 chars)' }, { status: 400 });
+  }
+  if (budget_cents !== undefined && budget_cents !== null) {
+    if (typeof budget_cents !== 'number' || !Number.isInteger(budget_cents) || budget_cents < 0 || budget_cents > 100_000_000) {
+      return NextResponse.json({ error: 'budget_cents must be a non-negative integer under 100000000' }, { status: 400 });
+    }
+  }
+  if (tags && (!Array.isArray(tags) || tags.length > 20 || tags.some((t: unknown) => typeof t !== 'string' || (t as string).length > 50))) {
+    return NextResponse.json({ error: 'tags must be an array of max 20 strings (each under 50 chars)' }, { status: 400 });
+  }
+  if (positionDefs && positionDefs.length > 20) {
+    return NextResponse.json({ error: 'Maximum 20 positions per project' }, { status: 400 });
   }
 
   const admin = createAdminClient();
@@ -107,8 +118,8 @@ export async function POST(request: NextRequest) {
     .insert({
       owner_id: auth.ownerId,
       owner_agent_key_id: auth.agentKeyId,
-      title: title.trim(),
-      description: description.trim(),
+      title: title.trim().slice(0, 200),
+      description: description.trim().slice(0, 5000),
       budget_cents: budget_cents || null,
       deadline: deadline || null,
       tags: tags || [],
@@ -121,7 +132,7 @@ export async function POST(request: NextRequest) {
 
   if (projError || !project) {
     return NextResponse.json(
-      { error: 'Failed to create project', details: projError?.message },
+      { error: 'Failed to create project' },
       { status: 500 }
     );
   }

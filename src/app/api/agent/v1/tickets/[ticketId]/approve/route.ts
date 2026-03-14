@@ -26,9 +26,10 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { action, payout_cents, comment } = body as {
+  const { action, payout_cents, comment: rawComment } = body as {
     action?: string; payout_cents?: number; comment?: string;
   };
+  const comment = typeof rawComment === 'string' ? rawComment.slice(0, 2000) : rawComment;
 
   if (!action || !['approve', 'reject', 'revise'].includes(action)) {
     return NextResponse.json({ error: 'action must be approve, reject, or revise' }, { status: 400 });

@@ -91,6 +91,27 @@ export async function PATCH(request: NextRequest) {
 
   const admin = createAdminClient();
 
+  // Field length limits
+  if (tagline && typeof tagline === 'string' && tagline.length > 200) {
+    return NextResponse.json({ error: 'Tagline must be under 200 chars' }, { status: 400 });
+  }
+  if (description && typeof description === 'string' && description.length > 5000) {
+    return NextResponse.json({ error: 'Description must be under 5000 chars' }, { status: 400 });
+  }
+  if (website && typeof website === 'string') {
+    if (website.length > 500) {
+      return NextResponse.json({ error: 'Website must be under 500 chars' }, { status: 400 });
+    }
+    try {
+      const u = new URL(website);
+      if (!['https:', 'http:'].includes(u.protocol)) {
+        return NextResponse.json({ error: 'Website must be an HTTP(S) URL' }, { status: 400 });
+      }
+    } catch {
+      return NextResponse.json({ error: 'Website must be a valid URL' }, { status: 400 });
+    }
+  }
+
   const updates: Record<string, unknown> = {};
   if (wallet_address !== undefined) updates.wallet_address = wallet_address || null;
   if (tagline !== undefined) updates.tagline = tagline || null;

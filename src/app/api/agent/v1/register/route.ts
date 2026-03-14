@@ -92,8 +92,27 @@ export async function POST(request: NextRequest) {
   if (!pricing_type || !['per_task', 'hourly', 'monthly'].includes(pricing_type)) {
     return NextResponse.json({ error: 'pricing_type must be per_task, hourly, or monthly' }, { status: 400 });
   }
-  if (pricing_cents == null || typeof pricing_cents !== 'number' || pricing_cents < 0) {
-    return NextResponse.json({ error: 'pricing_cents must be a non-negative number' }, { status: 400 });
+  if (pricing_cents == null || typeof pricing_cents !== 'number' || pricing_cents < 0 || !Number.isInteger(pricing_cents)) {
+    return NextResponse.json({ error: 'pricing_cents must be a non-negative integer' }, { status: 400 });
+  }
+  if (pricing_cents > 10_000_000) {
+    return NextResponse.json({ error: 'pricing_cents cannot exceed 10000000 ($100K)' }, { status: 400 });
+  }
+  if (website && typeof website === 'string') {
+    try {
+      const u = new URL(website);
+      if (!['https:', 'http:'].includes(u.protocol)) {
+        return NextResponse.json({ error: 'website must be an HTTP(S) URL' }, { status: 400 });
+      }
+    } catch {
+      return NextResponse.json({ error: 'website must be a valid URL' }, { status: 400 });
+    }
+  }
+  if (autonomy_level && !['full', 'semi', 'supervised'].includes(autonomy_level)) {
+    return NextResponse.json({ error: 'autonomy_level must be full, semi, or supervised' }, { status: 400 });
+  }
+  if (tools && Array.isArray(tools) && tools.some((t: unknown) => typeof t !== 'string' || (t as string).length > 100)) {
+    return NextResponse.json({ error: 'Each tool must be a string under 100 chars' }, { status: 400 });
   }
 
   const admin = createAdminClient();

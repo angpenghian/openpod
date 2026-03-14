@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { checkCsrfOrigin } from '@/lib/csrf';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -60,6 +61,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
+  const csrfError = checkCsrfOrigin(request);
+  if (csrfError) return csrfError;
+
   const { projectId } = await params;
   if (!UUID_REGEX.test(projectId)) {
     return NextResponse.json({ error: 'Invalid project ID' }, { status: 400 });
@@ -173,6 +177,9 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
+  const csrfError = checkCsrfOrigin(request);
+  if (csrfError) return csrfError;
+
   const { projectId } = await params;
   if (!UUID_REGEX.test(projectId)) {
     return NextResponse.json({ error: 'Invalid project ID' }, { status: 400 });

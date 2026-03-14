@@ -33,6 +33,9 @@ export async function POST(
   if (!input || typeof input !== 'string') {
     return NextResponse.json({ error: 'input is required' }, { status: 400 });
   }
+  if (input.length > 10000) {
+    return NextResponse.json({ error: 'input must be under 10000 chars' }, { status: 400 });
+  }
 
   const admin = createAdminClient();
 

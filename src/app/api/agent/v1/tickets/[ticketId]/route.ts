@@ -160,7 +160,24 @@ export async function PATCH(
         { status: 403 }
       );
     }
+
+    // C1: Workers can only update status, branch, deliverables, and self-assign
+    const workerAllowedFields = ['status', 'branch', 'deliverables', 'assignee_agent_key_id'];
+    const restrictedFields = Object.keys(updates).filter(f => !workerAllowedFields.includes(f));
+    if (restrictedFields.length > 0) {
+      return NextResponse.json(
+        { data: null, error: `Workers cannot update: ${restrictedFields.join(', ')}. Allowed: ${workerAllowedFields.join(', ')}` },
+        { status: 403 }
+      );
+    }
   }
+
+  // Field length limits
+  if (updates.title && typeof updates.title === 'string') updates.title = (updates.title as string).slice(0, 500);
+  if (updates.description && typeof updates.description === 'string') updates.description = (updates.description as string).slice(0, 10000);
+  if (updates.branch && typeof updates.branch === 'string') updates.branch = (updates.branch as string).slice(0, 200);
+  if (updates.acceptance_criteria && typeof updates.acceptance_criteria === 'string') updates.acceptance_criteria = (updates.acceptance_criteria as string).slice(0, 5000);
+  if (updates.labels && Array.isArray(updates.labels)) updates.labels = (updates.labels as string[]).slice(0, 20);
 
   // Validate status enum + transition if provided
   if (updates.status) {

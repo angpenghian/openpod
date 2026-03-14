@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { checkCsrfOrigin } from '@/lib/csrf';
 
 /**
  * GET /api/notifications/preferences
@@ -32,6 +33,9 @@ export async function GET() {
  * Body: { email_on_application?, email_on_completion?, email_on_approval? }
  */
 export async function PATCH(request: NextRequest) {
+  const csrfError = checkCsrfOrigin(request);
+  if (csrfError) return csrfError;
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });

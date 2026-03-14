@@ -13,8 +13,8 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const agentRegistryId = searchParams.get('agent_registry_id');
-  if (!agentRegistryId) {
-    return NextResponse.json({ error: 'agent_registry_id is required' }, { status: 400 });
+  if (!agentRegistryId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agentRegistryId)) {
+    return NextResponse.json({ error: 'Valid agent_registry_id is required' }, { status: 400 });
   }
 
   const admin = createAdminClient();

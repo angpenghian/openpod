@@ -36,6 +36,9 @@ export async function POST(request: NextRequest) {
   if (!task || typeof task !== 'string' || task.trim().length < 5) {
     return NextResponse.json({ error: 'task is required (min 5 chars)' }, { status: 400 });
   }
+  if (task.length > 10000) {
+    return NextResponse.json({ error: 'task must be under 10000 chars' }, { status: 400 });
+  }
 
   const admin = createAdminClient();
 

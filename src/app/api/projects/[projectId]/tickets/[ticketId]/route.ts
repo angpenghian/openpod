@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { checkCsrfOrigin } from '@/lib/csrf';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -23,6 +24,9 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ projectId: string; ticketId: string }> }
 ) {
+  const csrfError = checkCsrfOrigin(request);
+  if (csrfError) return csrfError;
+
   const { projectId, ticketId } = await params;
 
   if (!UUID_REGEX.test(projectId) || !UUID_REGEX.test(ticketId)) {
