@@ -162,372 +162,401 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
   }, 25_000);
 
   try {
-    // ═══════════════════════════════════════════════════════════════════════
-    // PHASE 1: Setup — Create PM agent with real API key
-    // ═══════════════════════════════════════════════════════════════════════
-
     emit({ type: 'system', agent: 'System', action: '🚀 Setting up live simulation...' });
 
-    // Get or create #general channel (needed for PM membership check)
-    const { data: existingChannel } = await db
-      .from('channels')
-      .select('id')
-      .eq('project_id', projectId)
-      .eq('is_default', true)
-      .single();
+    // ═══════════════════════════════════════════════════════════════════════
+    // RESUME CHECK: Look for existing active SIM agents for this project
+    // ═══════════════════════════════════════════════════════════════════════
 
-    let channelId: string;
-    if (existingChannel) {
-      channelId = existingChannel.id;
-    } else {
-      const { data: newChannel } = await db
-        .from('channels')
-        .insert({ project_id: projectId, name: 'general', is_default: true })
-        .select('id')
-        .single();
-      if (!newChannel) throw new Error('Failed to create channel');
-      channelId = newChannel.id;
+    const { data: existingMembers } = await db
+      .from('project_members')
+      .select('agent_key_id, position_id, positions(title, role_level)')
+      .eq('project_id', projectId)
+      .eq('role', 'agent');
+
+    // Find which of these have active SIM agent keys
+    const existingAgentKeyIds = (existingMembers || []).map(m => m.agent_key_id).filter(Boolean);
+    let resuming = false;
+
+    if (existingAgentKeyIds.length > 0) {
+      const { data: activeSimKeys } = await db
+        .from('agent_keys')
+        .select('id, name, capabilities')
+        .eq('agent_type', 'simulation')
+        .eq('is_active', true)
+        .in('id', existingAgentKeyIds);
+
+      if (activeSimKeys && activeSimKeys.length > 0) {
+        // Resume: reactivate existing agents with fresh API keys
+        resuming = true;
+        emit({ type: 'system', agent: 'System', action: `🔄 Resuming with ${activeSimKeys.length} existing agents...` });
+
+        for (const simKey of activeSimKeys) {
+          const member = existingMembers!.find(m => m.agent_key_id === simKey.id);
+          const posRaw = member?.positions;
+          const pos = (Array.isArray(posRaw) ? posRaw[0] : posRaw) as { title: string; role_level: string } | null;
+          if (!pos) continue;
+
+          // Generate fresh API key for this session (old hash is stale)
+          const freshKey = generateApiKey();
+          await db.from('agent_keys').update({
+            api_key_prefix: freshKey.slice(0, 16),
+            api_key_hash: hashApiKey(freshKey),
+          }).eq('id', simKey.id);
+
+          agents.push({
+            id: simKey.id,
+            apiKey: freshKey,
+            name: simKey.name,
+            roleTitle: pos.title,
+            roleLevel: pos.role_level,
+            positionId: member!.position_id,
+          });
+        }
+
+        emit({ type: 'system', agent: 'System', action: `✅ Restored ${agents.length} agents — skipping setup, going to work loop` });
+      }
     }
 
-    // Ensure PM position exists
-    let pmPositionId: string;
-    const { data: existingPm } = await db
-      .from('positions')
-      .select('id')
-      .eq('project_id', projectId)
-      .eq('role_level', 'project_manager')
-      .single();
+    if (isAborted()) return;
 
-    if (existingPm) {
-      pmPositionId = existingPm.id;
-    } else {
-      const { data: newPm } = await db
+    // ═══════════════════════════════════════════════════════════════════════
+    // PHASES 1-3: Only run if NOT resuming (fresh simulation)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    let pmAgent: SimulationAgent | undefined;
+
+    if (!resuming) {
+      // ── PHASE 1: Setup — Create PM agent with real API key ──
+
+      // Get or create #general channel
+      const { data: existingChannel } = await db
+        .from('channels')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('is_default', true)
+        .maybeSingle();
+
+      if (!existingChannel) {
+        await db
+          .from('channels')
+          .insert({ project_id: projectId, name: 'general', is_default: true })
+          .select('id')
+          .single();
+      }
+
+      // Ensure PM position exists
+      let pmPositionId: string;
+      const { data: existingPm } = await db
         .from('positions')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('role_level', 'project_manager')
+        .maybeSingle();
+
+      if (existingPm) {
+        pmPositionId = existingPm.id;
+      } else {
+        const { data: newPm } = await db
+          .from('positions')
+          .insert({
+            project_id: projectId,
+            title: 'Project Manager',
+            description: 'Overall project coordination and delivery',
+            required_capabilities: ['pm', 'planning', 'coordination'],
+            role_level: 'project_manager',
+            sort_order: 0,
+            status: 'open',
+          })
+          .select('id')
+          .single();
+        if (!newPm) throw new Error('Failed to create PM position');
+        pmPositionId = newPm.id;
+      }
+
+      // Create PM agent key
+      const pmApiKey = generateApiKey();
+
+      const { data: pmKey } = await db
+        .from('agent_keys')
         .insert({
-          project_id: projectId,
-          title: 'Project Manager',
-          description: 'Overall project coordination and delivery',
-          required_capabilities: ['pm', 'planning', 'coordination'],
-          role_level: 'project_manager',
-          sort_order: 0,
-          status: 'open',
+          owner_id: userId,
+          name: 'SIM-Project Manager',
+          api_key_prefix: pmApiKey.slice(0, 16),
+          api_key_hash: hashApiKey(pmApiKey),
+          agent_type: 'simulation',
+          description: 'Simulated Project Manager — live LLM simulation',
+          capabilities: ['pm', 'planning', 'coordination', 'hiring'],
+          is_active: true,
         })
         .select('id')
         .single();
-      if (!newPm) throw new Error('Failed to create PM position');
-      pmPositionId = newPm.id;
-    }
 
-    // Create PM agent key with real openpod_* API key
-    const pmApiKey = generateApiKey();
-    const pmKeyHash = hashApiKey(pmApiKey);
-    const pmPrefix = pmApiKey.slice(0, 16);
+      if (!pmKey) throw new Error('Failed to create PM agent key');
 
-    const { data: pmKey } = await db
-      .from('agent_keys')
-      .insert({
-        owner_id: userId,
+      // Assign PM to position
+      await db.from('applications').insert({
+        position_id: pmPositionId,
+        agent_key_id: pmKey.id,
+        cover_message: 'Live simulation — PM agent joining.',
+        status: 'accepted',
+      }).select().maybeSingle();
+
+      await db.from('project_members').insert({
+        project_id: projectId,
+        agent_key_id: pmKey.id,
+        position_id: pmPositionId,
+        role: 'agent',
+      }).select().maybeSingle();
+
+      await db.from('positions').update({ status: 'filled' }).eq('id', pmPositionId);
+
+      pmAgent = {
+        id: pmKey.id,
+        apiKey: pmApiKey,
         name: 'SIM-Project Manager',
-        api_key_prefix: pmPrefix,
-        api_key_hash: pmKeyHash,
-        agent_type: 'simulation',
-        description: 'Simulated Project Manager — live LLM simulation',
-        capabilities: ['pm', 'planning', 'coordination', 'hiring'],
-        is_active: true, // Must be true for API auth to work
-      })
-      .select('id')
-      .single();
+        roleTitle: 'Project Manager',
+        roleLevel: 'project_manager',
+        positionId: pmPositionId,
+      };
+      agents.push(pmAgent);
 
-    if (!pmKey) throw new Error('Failed to create PM agent key');
+      emit({ type: 'system', agent: 'System', action: '✅ Project Manager created with real API key' });
+      if (isAborted()) return;
 
-    // Assign PM to position
-    await db.from('applications').insert({
-      position_id: pmPositionId,
-      agent_key_id: pmKey.id,
-      cover_message: 'Live simulation — PM agent joining.',
-      status: 'accepted',
-    }).select().maybeSingle();
+      // ── PHASE 2: PM Planning ──
 
-    await db.from('project_members').insert({
-      project_id: projectId,
-      agent_key_id: pmKey.id,
-      position_id: pmPositionId,
-      role: 'agent',
-    }).select().maybeSingle();
+      emit({ type: 'thinking', agent: 'Project Manager', action: '⏳ Analyzing project vision...' });
 
-    await db.from('positions').update({ status: 'filled' }).eq('id', pmPositionId);
+      const pmToolCtx: ToolContext = {
+        baseUrl,
+        apiKey: pmApiKey,
+        projectId,
+        agentKeyId: pmKey.id,
+        agentName: 'SIM-Project Manager',
+        github,
+      };
 
-    const pmAgent: SimulationAgent = {
-      id: pmKey.id,
-      apiKey: pmApiKey,
-      name: 'SIM-Project Manager',
-      roleTitle: 'Project Manager',
-      roleLevel: 'project_manager',
-      positionId: pmPositionId,
-    };
-    agents.push(pmAgent);
-
-    emit({ type: 'system', agent: 'System', action: '✅ Project Manager created with real API key' });
-    if (isAborted()) return;
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // PHASE 2: PM Planning — GPT-4o-mini creates positions, tickets, etc.
-    // ═══════════════════════════════════════════════════════════════════════
-
-    emit({ type: 'thinking', agent: 'Project Manager', action: '⏳ Analyzing project vision...' });
-
-    const pmToolCtx: ToolContext = {
-      baseUrl,
-      apiKey: pmApiKey,
-      projectId,
-      agentKeyId: pmKey.id,
-      agentName: 'SIM-Project Manager',
-      github,
-    };
-
-    // ── PM Step 1: Create positions (via admin client) ──
-    const createPositionTool = {
-      type: 'function' as const,
-      function: {
-        name: 'create_position',
-        description: 'Create a new position/role in the project. Create leads FIRST, then workers with reports_to_title.',
-        parameters: {
-          type: 'object',
-          properties: {
-            title: { type: 'string', description: 'Position title (e.g. "Frontend Lead", "Sr Backend Developer")' },
-            description: { type: 'string', description: 'What this role does' },
-            required_capabilities: { type: 'array', items: { type: 'string' }, description: 'Skills needed' },
-            role_level: { type: 'string', enum: ['lead', 'worker'] },
-            reports_to_title: { type: 'string', description: 'Title of the lead this role reports to (required for workers)' },
+      // Step 1: Create positions (via admin client)
+      const createPositionTool = {
+        type: 'function' as const,
+        function: {
+          name: 'create_position',
+          description: 'Create a new position/role in the project. You MUST create both leads AND workers.',
+          parameters: {
+            type: 'object',
+            properties: {
+              title: { type: 'string', description: 'Position title (e.g. "Frontend Lead", "Sr Frontend Developer")' },
+              description: { type: 'string', description: 'What this role does' },
+              required_capabilities: { type: 'array', items: { type: 'string' }, description: 'Skills needed (use lowercase, e.g. ["frontend", "react", "css"])' },
+              role_level: { type: 'string', enum: ['lead', 'worker'] },
+              reports_to_title: { type: 'string', description: 'Exact title of the lead this worker reports to (REQUIRED for workers)' },
+            },
+            required: ['title', 'description', 'required_capabilities', 'role_level'],
           },
-          required: ['title', 'description', 'required_capabilities', 'role_level'],
         },
-      },
-    };
+      };
 
-    const positionResponse = await openai.chat.completions.create({
-      model: MODEL,
-      messages: [
-        { role: 'system', content: `You are the Project Manager for "${project.title}".\n\n## Project Vision\n${project.description}\n\nPlan the team structure. Create leads FIRST, then workers. Workers MUST specify reports_to_title pointing to their lead's exact title. Only create what the project actually needs (4-8 positions). A simple web app needs different roles than a distributed system.` },
-        { role: 'user', content: 'Create the positions the project needs using create_position. Create ALL leads first, then ALL workers. Call the tool multiple times.' },
-      ],
-      tools: [createPositionTool],
-      tool_choice: 'required',
-      temperature: 0.7,
-    });
-
-    if (isAborted()) return;
-
-    // Execute position creation — sort leads before workers
-    const posChoice = positionResponse.choices[0];
-    if (posChoice.message.tool_calls) {
-      const sorted = [...posChoice.message.tool_calls].sort((a, b) => {
-        if (a.type !== 'function' || b.type !== 'function') return 0;
-        try {
-          const aArgs = JSON.parse(a.function.arguments);
-          const bArgs = JSON.parse(b.function.arguments);
-          if (aArgs.role_level === 'lead' && bArgs.role_level !== 'lead') return -1;
-          if (aArgs.role_level !== 'lead' && bArgs.role_level === 'lead') return 1;
-        } catch { /* keep order */ }
-        return 0;
+      const positionResponse = await openai.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: 'system', content: `You are the Project Manager for "${project.title}".\n\n## Project Vision\n${project.description}\n\nPlan the team. You MUST create BOTH leads AND workers:\n- 2-3 leads (e.g. "Frontend Lead", "Backend Lead")\n- 3-5 workers under those leads (e.g. "Sr Frontend Developer" reports_to_title "Frontend Lead")\n\nCapabilities should be lowercase tech terms like: frontend, backend, react, node, database, api, css, mobile, testing, design.\nWorkers MUST have reports_to_title matching their lead's exact title.` },
+          { role: 'user', content: 'Create the team: leads FIRST, then workers. Every worker needs reports_to_title. Create 5-8 total positions.' },
+        ],
+        tools: [createPositionTool],
+        tool_choice: 'required',
+        temperature: 0.7,
       });
 
-      let nextSortOrder = 1;
+      if (isAborted()) return;
 
-      for (const toolCall of sorted) {
-        if (isAborted()) break;
-        if (toolCall.type !== 'function') continue;
+      const posChoice = positionResponse.choices[0];
+      if (posChoice.message.tool_calls) {
+        const sorted = [...posChoice.message.tool_calls].sort((a, b) => {
+          if (a.type !== 'function' || b.type !== 'function') return 0;
+          try {
+            const aArgs = JSON.parse(a.function.arguments);
+            const bArgs = JSON.parse(b.function.arguments);
+            if (aArgs.role_level === 'lead' && bArgs.role_level !== 'lead') return -1;
+            if (aArgs.role_level !== 'lead' && bArgs.role_level === 'lead') return 1;
+          } catch { /* keep order */ }
+          return 0;
+        });
 
-        const args = JSON.parse(toolCall.function.arguments);
-        let reportsTo: string | null = pmPositionId;
-        if (args.reports_to_title && typeof args.reports_to_title === 'string') {
-          const { data: match } = await db
-            .from('positions')
-            .select('id')
-            .eq('project_id', projectId)
-            .ilike('title', args.reports_to_title)
-            .maybeSingle();
-          if (match) reportsTo = match.id;
-          else {
-            const { data: fuzzy } = await db
+        let nextSortOrder = 1;
+
+        for (const toolCall of sorted) {
+          if (isAborted()) break;
+          if (toolCall.type !== 'function') continue;
+
+          const args = JSON.parse(toolCall.function.arguments);
+          let reportsTo: string | null = pmPositionId;
+          if (args.reports_to_title && typeof args.reports_to_title === 'string') {
+            const { data: match } = await db
               .from('positions')
               .select('id')
               .eq('project_id', projectId)
-              .ilike('title', `%${args.reports_to_title}%`)
-              .limit(1)
+              .ilike('title', args.reports_to_title)
               .maybeSingle();
-            if (fuzzy) reportsTo = fuzzy.id;
+            if (match) reportsTo = match.id;
+            else {
+              const { data: fuzzy } = await db
+                .from('positions')
+                .select('id')
+                .eq('project_id', projectId)
+                .ilike('title', `%${args.reports_to_title}%`)
+                .limit(1)
+                .maybeSingle();
+              if (fuzzy) reportsTo = fuzzy.id;
+            }
+          }
+
+          const { error: posInsertErr } = await db.from('positions').insert({
+            project_id: projectId,
+            title: args.title,
+            description: args.description || '',
+            required_capabilities: (args.required_capabilities || []).map((c: string) => c.toLowerCase()),
+            role_level: args.role_level || 'worker',
+            reports_to: reportsTo,
+            sort_order: nextSortOrder++,
+            status: 'open',
+            pay_type: 'fixed',
+            max_agents: 1,
+            payment_status: 'unfunded',
+            amount_earned_cents: 0,
+          });
+
+          if (posInsertErr) {
+            emit({ type: 'error', agent: 'Project Manager', action: `⚠️ Failed to create position "${args.title}": ${posInsertErr.message}` });
+          } else {
+            emit({ type: 'action', agent: 'Project Manager', action: `👤 Created position: ${args.title} (${args.role_level})` });
           }
         }
+      }
 
-        const { error: posInsertErr } = await db.from('positions').insert({
-          project_id: projectId,
-          title: args.title,
-          description: args.description || '',
-          required_capabilities: args.required_capabilities || [],
-          role_level: args.role_level || 'worker',
-          reports_to: reportsTo,
-          sort_order: nextSortOrder++,
-          status: 'open',
-          pay_type: 'fixed',
-          max_agents: 1,
-          payment_status: 'unfunded',
-          amount_earned_cents: 0,
-        });
+      if (isAborted()) return;
 
-        if (posInsertErr) {
-          emit({ type: 'error', agent: 'Project Manager', action: `⚠️ Failed to create position "${args.title}": ${posInsertErr.message}` });
-        } else {
-          emit({ type: 'action', agent: 'Project Manager', action: `👤 Created position: ${args.title} (${args.role_level})` });
+      // Step 2: Create tickets, chat, knowledge (via real API)
+      // IMPORTANT: Do NOT use labels on tickets to avoid capability mismatch issues
+      emit({ type: 'thinking', agent: 'Project Manager', action: '⏳ Creating tickets and project plan...' });
+
+      const pmTicketTools = OPENPOD_TOOLS.filter(t => t.type === 'function' && ['create_ticket', 'post_message', 'write_knowledge'].includes(t.function.name));
+
+      const ticketResponse = await openai.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: 'system', content: `You are the Project Manager for "${project.title}".\n\n## Project Vision\n${project.description}\n\nCreate the work plan:\n1. **Create 6-10 tickets** — actionable work items with detailed descriptions (50+ chars) and acceptance criteria. Use priority: "urgent" for must-haves, "high" for important, "medium" for nice-to-have.\n   IMPORTANT: Do NOT include labels on tickets. Leave labels empty.\n2. **Post in chat** — Introduce yourself and outline the plan.\n3. **Write knowledge** — Document architecture decisions and tech stack.` },
+          { role: 'user', content: 'Create the tickets (NO labels field), post your intro, and write knowledge. Call create_ticket multiple times.' },
+        ],
+        tools: pmTicketTools,
+        tool_choice: 'required',
+        temperature: 0.7,
+      });
+
+      if (isAborted()) return;
+
+      const ticketChoice = ticketResponse.choices[0];
+      if (ticketChoice.message.tool_calls) {
+        for (const toolCall of ticketChoice.message.tool_calls) {
+          if (isAborted()) break;
+          if (toolCall.type !== 'function') continue;
+          const args = JSON.parse(toolCall.function.arguments);
+          // Strip labels to prevent capability mismatch
+          delete args.labels;
+          const { action } = await executeApiTool(toolCall.function.name, args, pmToolCtx);
+          emit({ type: 'action', agent: 'Project Manager', action });
         }
       }
-    }
 
-    if (isAborted()) return;
+      if (isAborted()) return;
 
-    // ── PM Step 2: Create tickets, chat, knowledge (via real API) ──
-    emit({ type: 'thinking', agent: 'Project Manager', action: '⏳ Creating tickets and project plan...' });
+      // ── PHASE 3: Auto-hire ──
 
-    const pmTicketTools = OPENPOD_TOOLS.filter(t => t.type === 'function' && ['create_ticket', 'post_message', 'write_knowledge'].includes(t.function.name));
-
-    const ticketResponse = await openai.chat.completions.create({
-      model: MODEL,
-      messages: [
-        { role: 'system', content: `You are the Project Manager for "${project.title}".\n\n## Project Vision\n${project.description}\n\nThe team is being assembled. Now you need to:\n1. **Create 6-10 tickets** — Break the project into actionable work items. Each ticket needs a detailed description (50+ chars), acceptance criteria, and labels. Use priority: "urgent" for must-haves, "high" for important, "medium" for nice-to-have.\n2. **Post in chat** — Introduce yourself and outline the project plan.\n3. **Write knowledge** — Document the architecture decisions, tech stack choices, and team plan.\n\nBe specific and actionable. Each ticket should be completable by one person.` },
-        { role: 'user', content: 'Create the tickets, post your intro message, and write the knowledge doc. Call create_ticket multiple times, plus post_message and write_knowledge.' },
-      ],
-      tools: pmTicketTools,
-      tool_choice: 'required',
-      temperature: 0.7,
-    });
-
-    if (isAborted()) return;
-
-    const ticketChoice = ticketResponse.choices[0];
-    if (ticketChoice.message.tool_calls) {
-      for (const toolCall of ticketChoice.message.tool_calls) {
-        if (isAborted()) break;
-        if (toolCall.type !== 'function') continue;
-        const args = JSON.parse(toolCall.function.arguments);
-        const { action } = await executeApiTool(toolCall.function.name, args, pmToolCtx);
-        emit({ type: 'action', agent: 'Project Manager', action });
-      }
-    }
-
-    if (isAborted()) return;
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // PHASE 3: Auto-hire — create agent keys for each open position
-    // ═══════════════════════════════════════════════════════════════════════
-
-    const { data: openPositions, error: posQueryErr } = await db
-      .from('positions')
-      .select('id, title, role_level, required_capabilities, reports_to')
-      .eq('project_id', projectId)
-      .eq('status', 'open')
-      .order('sort_order');
-
-    if (posQueryErr) {
-      emit({ type: 'error', agent: 'System', action: `⚠️ Failed to query positions: ${posQueryErr.message}` });
-    }
-
-    if (!openPositions || openPositions.length === 0) {
-      // Debug: check ALL positions for this project regardless of status
-      const { data: allPositions } = await db
+      const { data: openPositions } = await db
         .from('positions')
-        .select('id, title, status, role_level')
-        .eq('project_id', projectId);
-      const statusSummary = (allPositions || []).map(p => `${p.title}:${p.status}`).join(', ');
-      emit({ type: 'system', agent: 'System', action: `⚠️ No open positions found. All positions (${allPositions?.length || 0}): ${statusSummary || 'none'}` });
-    } else {
-      emit({ type: 'system', agent: 'System', action: `📋 Hiring ${openPositions.length} agents...` });
+        .select('id, title, role_level, required_capabilities, reports_to')
+        .eq('project_id', projectId)
+        .eq('status', 'open')
+        .order('sort_order');
 
-      // Fix worker→lead hierarchy
-      const leads = openPositions.filter(p => p.role_level === 'lead');
-      const workers = openPositions.filter(p => p.role_level === 'worker');
+      if (!openPositions || openPositions.length === 0) {
+        emit({ type: 'system', agent: 'System', action: '⚠️ No open positions — only PM will work' });
+      } else {
+        emit({ type: 'system', agent: 'System', action: `📋 Hiring ${openPositions.length} agents...` });
 
-      for (const worker of workers) {
-        if (worker.reports_to !== pmPositionId) continue;
-        let bestLead: typeof leads[0] | null = null;
+        // Fix worker→lead hierarchy
+        const leads = openPositions.filter(p => p.role_level === 'lead');
+        const workers = openPositions.filter(p => p.role_level === 'worker');
 
-        const workerDomain = findDomain(worker.title);
-        if (workerDomain) {
-          bestLead = leads.find(l => findDomain(l.title) === workerDomain) || null;
-        }
-
-        if (!bestLead) {
-          const workerCaps = new Set(worker.required_capabilities || []);
-          let bestOverlap = 0;
-          for (const lead of leads) {
-            const overlap = (lead.required_capabilities || []).filter((c: string) => workerCaps.has(c)).length;
-            if (overlap > bestOverlap) {
-              bestOverlap = overlap;
-              bestLead = lead;
+        for (const worker of workers) {
+          const workerDomain = findDomain(worker.title);
+          if (workerDomain) {
+            const bestLead = leads.find(l => findDomain(l.title) === workerDomain);
+            if (bestLead) {
+              await db.from('positions').update({ reports_to: bestLead.id }).eq('id', worker.id);
             }
           }
         }
 
-        if (!bestLead && leads.length > 0) bestLead = leads[0];
+        // Create agent key for each position
+        for (const pos of openPositions) {
+          if (isAborted()) break;
 
-        if (bestLead) {
-          await db.from('positions').update({ reports_to: bestLead.id }).eq('id', worker.id);
-        }
-      }
+          const agentApiKey = generateApiKey();
+          const agentName = `SIM-${pos.title}`;
 
-      // Create agent key for each position
-      for (const pos of openPositions) {
-        if (isAborted()) break;
+          const { data: agentKey } = await db
+            .from('agent_keys')
+            .insert({
+              owner_id: userId,
+              name: agentName,
+              api_key_prefix: agentApiKey.slice(0, 16),
+              api_key_hash: hashApiKey(agentApiKey),
+              agent_type: 'simulation',
+              description: `Simulated ${pos.title} — live LLM simulation`,
+              capabilities: (pos.required_capabilities || []).map((c: string) => c.toLowerCase()),
+              is_active: true,
+            })
+            .select('id')
+            .single();
 
-        const agentApiKey = generateApiKey();
-        const agentName = `SIM-${pos.title}`;
+          if (!agentKey) continue;
 
-        const { data: agentKey } = await db
-          .from('agent_keys')
-          .insert({
-            owner_id: userId,
+          await db.from('applications').insert({
+            position_id: pos.id,
+            agent_key_id: agentKey.id,
+            cover_message: `Live simulation — ${pos.title} agent joining.`,
+            status: 'accepted',
+          }).select().maybeSingle();
+
+          await db.from('project_members').insert({
+            project_id: projectId,
+            agent_key_id: agentKey.id,
+            position_id: pos.id,
+            role: 'agent',
+          }).select().maybeSingle();
+
+          await db.from('positions').update({ status: 'filled' }).eq('id', pos.id);
+
+          agents.push({
+            id: agentKey.id,
+            apiKey: agentApiKey,
             name: agentName,
-            api_key_prefix: agentApiKey.slice(0, 16),
-            api_key_hash: hashApiKey(agentApiKey),
-            agent_type: 'simulation',
-            description: `Simulated ${pos.title} — live LLM simulation`,
-            capabilities: pos.required_capabilities || [],
-            is_active: true,
-          })
-          .select('id')
-          .single();
+            roleTitle: pos.title,
+            roleLevel: pos.role_level,
+            positionId: pos.id,
+          });
 
-        if (!agentKey) continue;
+          emit({ type: 'action', agent: 'System', action: `✅ Hired: ${pos.title}` });
+        }
 
-        // Apply + join
-        await db.from('applications').insert({
-          position_id: pos.id,
-          agent_key_id: agentKey.id,
-          cover_message: `Live simulation — ${pos.title} agent joining.`,
-          status: 'accepted',
-        }).select().maybeSingle();
-
-        await db.from('project_members').insert({
-          project_id: projectId,
-          agent_key_id: agentKey.id,
-          position_id: pos.id,
-          role: 'agent',
-        }).select().maybeSingle();
-
-        await db.from('positions').update({ status: 'filled' }).eq('id', pos.id);
-
-        agents.push({
-          id: agentKey.id,
-          apiKey: agentApiKey,
-          name: agentName,
-          roleTitle: pos.title,
-          roleLevel: pos.role_level,
-          positionId: pos.id,
-        });
-
-        emit({ type: 'action', agent: 'System', action: `✅ Hired: ${pos.title}` });
+        emit({ type: 'refresh', agent: 'System', action: '🔄 Team assembled — refreshing workspace...' });
       }
+    } // end if (!resuming)
 
-      emit({ type: 'refresh', agent: 'System', action: '🔄 Team assembled — refreshing workspace...' });
+    // Find PM agent (needed for work cycle)
+    if (!pmAgent) {
+      pmAgent = agents.find(a => a.roleLevel === 'project_manager');
     }
 
     if (isAborted()) return;
@@ -603,7 +632,8 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
       }
     }
 
-    // ── Setup turns — each non-PM agent introduces itself and picks up work ──
+    // ── Setup turns — only for fresh simulation, not resume ──
+    if (!resuming) {
     const sortedTeam = [
       ...agents.filter(a => a.roleLevel === 'lead'),
       ...agents.filter(a => a.roleLevel === 'worker'),
@@ -638,6 +668,7 @@ IMPORTANT: When you see tickets from list_tickets, the "id:" field is the UUID y
         tools,
       );
     }
+    } // end if (!resuming) for setup turns
 
     if (isAborted()) return;
 
@@ -645,8 +676,13 @@ IMPORTANT: When you see tickets from list_tickets, the "id:" field is the UUID y
     const workCycle = [
       ...agents.filter(a => a.roleLevel === 'lead'),
       ...agents.filter(a => a.roleLevel === 'worker'),
-      pmAgent,
+      ...(pmAgent ? [pmAgent] : agents.filter(a => a.roleLevel === 'project_manager')),
     ];
+
+    if (workCycle.length === 0) {
+      emit({ type: 'error', agent: 'System', action: '❌ No agents available for work loop' });
+      return;
+    }
 
     for (let round = 0; round < maxRounds; round++) {
       if (isAborted()) break;
