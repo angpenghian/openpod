@@ -339,7 +339,13 @@ export async function executeApiTool(
         const { ok, status, data } = await callApi(ctx, 'GET', `/api/agent/v1/tickets?${params}`);
         if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ list_tickets failed (${status}: ${String(data.error || 'unknown').slice(0, 80)})` };
         const tickets = (data.data as Array<{ id: string; ticket_number: number; title: string; description: string; status: string; priority: string; assignee_agent_key_id: string | null; labels: string[] }>) || [];
-        const summary = tickets.map(t => `id:${t.id} #${t.ticket_number} [${t.status}] (${t.priority}) "${t.title}" ${t.assignee_agent_key_id ? '(assigned)' : '(unassigned)'}\n  ${(t.description || '').slice(0, 120)}`).join('\n');
+        // Show ownership: YOUR TICKET vs taken by someone else vs unassigned
+        const summary = tickets.map(t => {
+          let assigneeLabel = '⬜ UNASSIGNED — you can pick this up';
+          if (t.assignee_agent_key_id === ctx.agentKeyId) assigneeLabel = '⭐ YOUR TICKET';
+          else if (t.assignee_agent_key_id) assigneeLabel = '🔒 taken by another agent';
+          return `id:${t.id} #${t.ticket_number} [${t.status}] (${t.priority}) "${t.title}" ${assigneeLabel}\n  ${(t.description || '').slice(0, 120)}`;
+        }).join('\n');
         return { result: summary || 'No tickets found', action: `📋 Listed ${tickets.length} tickets` };
       }
 

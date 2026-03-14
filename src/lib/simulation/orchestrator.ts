@@ -166,8 +166,25 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
     }
   }, 25_000);
 
+  // Validate GitHub connection before providing tools to agents
+  let validatedGitHub = github;
+  if (github) {
+    try {
+      const testRes = await fetch(`https://api.github.com/repos/${github.owner}/${github.repo}`, {
+        headers: { Authorization: `Bearer ${github.token}`, Accept: 'application/vnd.github+json' },
+      });
+      if (!testRes.ok) {
+        validatedGitHub = null; // GitHub connection broken — disable GitHub tools
+      }
+    } catch {
+      validatedGitHub = null;
+    }
+  }
+
   try {
-    emit({ type: 'system', agent: 'System', action: '🚀 Setting up live simulation...' });
+    emit({ type: 'system', agent: 'System', action: validatedGitHub
+      ? `🚀 Setting up live simulation... (GitHub: ${validatedGitHub.owner}/${validatedGitHub.repo})`
+      : '🚀 Setting up live simulation... (no GitHub — code will be in ticket comments)' });
 
     // ═══════════════════════════════════════════════════════════════════════
     // RESUME CHECK: Look for existing active SIM agents for this project
@@ -375,7 +392,7 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
         projectId,
         agentKeyId: pmKey.id,
         agentName: 'SIM-Project Manager',
-        github,
+        github: validatedGitHub,
       };
 
       // Step 1: Create positions (via admin client)
@@ -722,7 +739,7 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
         projectId,
         agentKeyId: agent.id,
         agentName: agent.name,
-        github,
+        github: validatedGitHub,
       };
 
       const messages: ChatCompletionMessageParam[] = [
@@ -807,7 +824,7 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
       emit({ type: 'thinking', agent: agent.roleTitle, action: `⏳ ${agent.roleTitle} joining team...` });
 
       const roleDesc = getRoleDescription(agent.roleTitle, agent.roleLevel);
-      const tools = getToolsForRole(agent.roleLevel, !!github);
+      const tools = getToolsForRole(agent.roleLevel, !!validatedGitHub);
 
       await runAgentTurn(
         agent,
@@ -837,10 +854,10 @@ If a tool call fails, move on to the next action — do NOT retry the same call.
 
     if (isAborted()) return;
 
-    // ── Work rounds — cycle through all agents ──
+    // ── Work rounds — workers FIRST (do work), then leads (review), then PM (approve) ──
     const workCycle = [
-      ...agents.filter(a => a.roleLevel === 'lead'),
       ...agents.filter(a => a.roleLevel === 'worker'),
+      ...agents.filter(a => a.roleLevel === 'lead'),
       ...(pmAgent ? [pmAgent] : agents.filter(a => a.roleLevel === 'project_manager')),
     ];
 
@@ -864,10 +881,10 @@ If a tool call fails, move on to the next action — do NOT retry the same call.
           ? 'As PM: review completed work, coordinate the team, create new tickets for gaps, approve finished tickets (approve_ticket), track progress.'
           : getRoleDescription(agent.roleTitle, agent.roleLevel);
 
-        const tools = getToolsForRole(agent.roleLevel, !!github);
+        const tools = getToolsForRole(agent.roleLevel, !!validatedGitHub);
 
-        const hasGitHubNote = github
-          ? `\n\nYou have access to the GitHub repo (${github.owner}/${github.repo}). Use create_branch, write_file, create_pull_request.`
+        const hasGitHubNote = validatedGitHub
+          ? `\n\nYou have access to the GitHub repo (${validatedGitHub.owner}/${validatedGitHub.repo}). Use create_branch, write_file, create_pull_request.`
           : '';
 
         await runAgentTurn(
@@ -884,17 +901,18 @@ ${roleDesc}${hasGitHubNote}
 ${agent.roleLevel === 'project_manager' ? `**As PM, you MUST do these each turn:**
 - approve_ticket on ANY ticket with status "in_review" — approve ALL of them
 - If all tickets are in_review or done, create new tickets for remaining work
-- Post a status update in chat summarizing team progress (use your title "Project Manager", NOT placeholder text)` : agent.roleLevel === 'lead' ? `**As Lead, you MUST do these each turn:**
-- Pick up an unassigned ticket (update_ticket → in_progress) if you don't have one
-- Add detailed comments on your ticket with implementation analysis
-- Move your in_progress ticket to in_review when you've added thorough comments
-- Write knowledge entries about architecture decisions in your domain
-- Post coordination updates in chat (use your title "${agent.roleTitle}", NOT placeholder text)` : `**As Worker, you MUST do these each turn:**
-- If you don't have a ticket: pick up an unassigned one (update_ticket → in_progress)
-- Add detailed comments showing your work: code snippets, implementation notes, testing results
-- When your work is documented in comments, move ticket to in_review
-- Post progress updates in chat (use your title "${agent.roleTitle}", NOT placeholder text)`}
-${github && (agent.roleLevel === 'worker' || agent.roleLevel === 'lead') ? `- GitHub: create_branch → write_file → create_pull_request for code deliverables` : ''}
+- Post a status update in chat summarizing team progress (use your title "Project Manager", NOT placeholder text)` : agent.roleLevel === 'lead' ? `**As Lead, your job is to REVIEW work and write knowledge — do NOT pick up tickets (leave those for workers):**
+- Add detailed review comments (add_comment) on tickets that are "in_progress" or "in_review" — give technical feedback, suggest improvements, review architecture
+- Write knowledge entries about architecture decisions, design patterns, and technical standards in your domain (write_knowledge)
+- Post coordination updates in chat — summarize what your team is working on, flag blockers, give direction (post_message)
+- If you already have a ticket assigned to you: add implementation comments with actual code snippets, then move it to in_review
+- Do NOT try to pick up unassigned tickets — workers handle implementation` : `**As Worker, you MUST do these each turn:**
+- Look for tickets marked "⬜ UNASSIGNED" — pick one up with update_ticket (set status to "in_progress")
+- If you already have a ticket (marked "⭐ YOUR TICKET"): add detailed comments with ACTUAL CODE — write real implementation code in your comments (functions, classes, config files, tests)
+- When your implementation is documented in comments, move your ticket to in_review
+- Post progress updates in chat (use your title "${agent.roleTitle}", NOT placeholder text)
+- Do NOT try to update tickets marked "🔒 taken by another agent" — you will get a 403 error`}
+${validatedGitHub && (agent.roleLevel === 'worker' || agent.roleLevel === 'lead') ? `- GitHub: create_branch → write_file → create_pull_request for code deliverables` : (agent.roleLevel === 'worker' ? `- Since there is no GitHub repo connected, write your implementation code DIRECTLY in ticket comments using markdown code blocks` : '')}
 
 CRITICAL RULES:
 - Do NOT call list_tickets more than once per turn.
