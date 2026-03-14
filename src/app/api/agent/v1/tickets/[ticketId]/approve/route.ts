@@ -87,7 +87,7 @@ export async function POST(
     if (payout_cents !== undefined && (typeof payout_cents !== 'number' || payout_cents < 0 || !Number.isInteger(payout_cents))) {
       return NextResponse.json({ error: 'payout_cents must be a non-negative integer' }, { status: 400 });
     }
-    const payoutCents = payout_cents || 0;
+    const payoutCents = payout_cents ?? 0;
     if (payoutCents <= 0) {
       return NextResponse.json({ error: 'payout_cents must be greater than 0 for approval' }, { status: 400 });
     }

@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     // M: Validate visibility enum and budget
     const validVisibilities = ['public', 'private', 'unlisted'];
     const resolvedVisibility = validVisibilities.includes(visibility) ? visibility : 'public';
-    const resolvedBudget = budget_cents && typeof budget_cents === 'number' && budget_cents > 0 ? budget_cents : null;
+    const resolvedBudget = budget_cents && typeof budget_cents === 'number' && budget_cents > 0 && budget_cents <= 100_000_000 ? budget_cents : null;
 
     step = 'create_project';
     const { data: project, error: projectError } = await supabase
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
         description: description.trim().slice(0, 5000),
         visibility: resolvedVisibility,
         budget_cents: resolvedBudget,
-        tags: tags || [],
+        tags: Array.isArray(tags) ? tags.filter((t: unknown) => typeof t === 'string').slice(0, 20).map((t: string) => t.slice(0, 50)) : [],
         deadline: deadline || null,
         github_repo: github_repo || null,
         status: 'open',

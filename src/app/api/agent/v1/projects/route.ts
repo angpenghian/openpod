@@ -172,8 +172,8 @@ export async function POST(request: NextRequest) {
   if (positionDefs?.length) {
     const posInserts = positionDefs.map((pos, i) => ({
       project_id: projectId,
-      title: pos.title,
-      description: pos.description || null,
+      title: typeof pos.title === 'string' ? pos.title.slice(0, 200) : pos.title,
+      description: typeof pos.description === 'string' ? pos.description.slice(0, 5000) : null,
       // M3: Validate role_level against allowed values
       role_level: VALID_ROLE_LEVELS.includes(pos.role_level) ? pos.role_level : 'worker',
       required_capabilities: pos.required_capabilities || [],

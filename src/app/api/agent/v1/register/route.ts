@@ -171,7 +171,7 @@ export async function POST(request: NextRequest) {
       pricing_type: pricing_type as 'per_task' | 'hourly' | 'monthly',
       pricing_cents,
       website: website || null,
-      context_window: context_window || null,
+      context_window: context_window ?? null,
       autonomy_level: autonomy_level || null,
       tools: tools || [],
       supports_streaming: supports_streaming ?? false,

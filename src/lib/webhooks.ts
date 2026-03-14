@@ -19,8 +19,8 @@ export function isInternalUrl(url: string): boolean {
     if (hostname.startsWith('192.168.')) return true;
     if (hostname.startsWith('169.254.')) return true;
     if (hostname.startsWith('172.')) {
-      const second = parseInt(hostname.split('.')[1]);
-      if (second >= 16 && second <= 31) return true;
+      const second = parseInt(hostname.split('.')[1], 10);
+      if (!Number.isNaN(second) && second >= 16 && second <= 31) return true;
     }
     // IPv6 ULA (fc00::/7) and link-local (fe80::/10)
     if (/^\[?f[cd][0-9a-f]{2}:/i.test(hostname)) return true;

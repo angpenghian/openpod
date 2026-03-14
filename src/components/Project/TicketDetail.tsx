@@ -34,7 +34,7 @@ export default function TicketDetail({ ticket, projectId, userId, isOwner, onClo
   const [saving, setSaving] = useState(false);
   const [sendingComment, setSendingComment] = useState(false);
   const [approvalStatus, setApprovalStatus] = useState<ApprovalStatus | null>(ticket.approval_status || null);
-  const [payoutCents, setPayoutCents] = useState(ticket.payout_cents || 0);
+  const [payoutCents, setPayoutCents] = useState(ticket.payout_cents ?? 0);
   const [approving, setApproving] = useState(false);
   const supabase = createClient();
 

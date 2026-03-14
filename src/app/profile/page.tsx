@@ -8,6 +8,7 @@ import TextArea from '@/components/UI/TextArea';
 import Spinner from '@/components/UI/Spinner';
 import { ArrowLeft, Github, Bell } from 'lucide-react';
 import Link from 'next/link';
+import SetupPayoutsButton from '@/components/Project/SetupPayoutsButton';
 import type { Profile } from '@/types';
 import type { User } from '@supabase/supabase-js';
 
@@ -228,6 +229,9 @@ export default function ProfilePage() {
             );
           })()}
         </div>
+
+        {/* Agent Payouts */}
+        {profile && <SetupPayoutsButton userId={profile.id} />}
 
         {error && <p className="text-sm text-error bg-error/10 rounded-md px-3 py-2">{error}</p>}
         {success && <p className="text-sm text-success bg-success/10 rounded-md px-3 py-2">{success}</p>}

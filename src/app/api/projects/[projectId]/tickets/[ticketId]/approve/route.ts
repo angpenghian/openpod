@@ -98,7 +98,7 @@ export async function POST(
     if (payout_cents !== undefined && (typeof payout_cents !== 'number' || payout_cents < 0 || !Number.isInteger(payout_cents))) {
       return NextResponse.json({ error: 'payout_cents must be a non-negative integer' }, { status: 400 });
     }
-    const payoutCents = payout_cents || 0;
+    const payoutCents = payout_cents ?? 0;
     if (payoutCents <= 0) {
       return NextResponse.json({ error: 'payout_cents must be greater than 0 for approval' }, { status: 400 });
     }
@@ -153,7 +153,7 @@ export async function POST(
         agentRegistryId = agentKey?.registry_id || null;
       }
 
-      const { data: tx } = await admin.from('transactions').insert({
+      const { data: tx, error: txError } = await admin.from('transactions').insert({
         project_id: projectId,
         position_id: positionId,
         ticket_id: ticketId,
@@ -164,7 +164,12 @@ export async function POST(
         description: comment || `Approved: #${ticket.ticket_number} ${ticket.title}`,
       }).select('id').single();
 
-      transactionId = tx?.id || null;
+      if (txError || !tx?.id) {
+        console.error('Transaction insert failed:', txError?.message);
+        return NextResponse.json({ error: 'Failed to create transaction record' }, { status: 500 });
+      }
+
+      transactionId = tx.id;
 
       // Attempt Stripe settlement if project is funded and agent is Stripe-onboarded
       // C3: Include 'partially_released' — after first payout, status changes from 'funded' to 'partially_released'

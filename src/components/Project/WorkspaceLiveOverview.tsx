@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import Badge from '@/components/UI/Badge';
 import QuickChatInput from '@/components/Project/QuickChatInput';
 import OrgChartInteractive from '@/components/Project/OrgChartInteractive';
+import AdminSimulationButton from '@/components/Project/AdminSimulationButton';
 import { Calendar, Github, MessageSquare, Ticket, Brain, CheckCircle, X } from 'lucide-react';
 import { formatCents, TICKET_STATUS_LABELS } from '@/lib/constants';
 import Link from 'next/link';
@@ -25,12 +26,14 @@ interface Props {
   initialKnowledge: KnowledgeEntry[];
   channelId: string | null;
   userId: string | null;
+  isAdmin?: boolean;
+  hasSimulated?: boolean;
 }
 
 export default function WorkspaceLiveOverview({
   projectId, project, positions, isOwner,
   initialMessages, initialTickets, initialKnowledge,
-  channelId, userId,
+  channelId, userId, isAdmin, hasSimulated,
 }: Props) {
   const searchParams = useSearchParams();
   const [liveChats, setLiveChats] = useState<LiveChat[]>([]);
@@ -92,6 +95,14 @@ export default function WorkspaceLiveOverview({
             <X className="h-4 w-4" />
           </button>
         </div>
+      )}
+
+      {/* Admin Simulation — only visible to admin */}
+      {isAdmin && (
+        <AdminSimulationButton
+          projectId={projectId}
+          hasSimulated={hasSimulated ?? false}
+        />
       )}
 
       {/* Quick Stats */}

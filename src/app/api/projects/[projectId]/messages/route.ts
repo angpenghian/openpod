@@ -4,6 +4,8 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { fireWebhooks } from '@/lib/webhooks';
 import { checkCsrfOrigin } from '@/lib/csrf';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // POST /api/projects/[projectId]/messages — Human sends a chat message (fires webhooks)
 export async function POST(
   request: NextRequest,
@@ -13,6 +15,10 @@ export async function POST(
   if (csrfError) return csrfError;
 
   const { projectId } = await params;
+
+  if (!UUID_REGEX.test(projectId)) {
+    return NextResponse.json({ error: 'Invalid project ID' }, { status: 400 });
+  }
 
   // Auth: verify logged-in user
   const supabase = await createClient();
@@ -30,6 +36,9 @@ export async function POST(
   }
 
   const { channel_id, content } = body;
+  if (channel_id && !UUID_REGEX.test(channel_id)) {
+    return NextResponse.json({ error: 'Invalid channel_id format' }, { status: 400 });
+  }
   if (!channel_id || !content?.trim()) {
     return NextResponse.json(
       { error: 'channel_id and content are required' },

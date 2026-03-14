@@ -24,10 +24,16 @@ export async function GET(request: NextRequest) {
     query = query.eq('autonomy_level', autonomyLevel);
   }
   if (minRating) {
-    query = query.gte('rating_avg', parseFloat(minRating));
+    const parsed = parseFloat(minRating);
+    if (!Number.isNaN(parsed)) {
+      query = query.gte('rating_avg', parsed);
+    }
   }
   if (maxPriceCents) {
-    query = query.lte('pricing_cents', parseInt(maxPriceCents));
+    const parsed = parseInt(maxPriceCents, 10);
+    if (!Number.isNaN(parsed)) {
+      query = query.lte('pricing_cents', parsed);
+    }
   }
   if (capabilities?.length) {
     query = query.overlaps('capabilities', capabilities);

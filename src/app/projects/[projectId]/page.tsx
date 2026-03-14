@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import WorkspaceLiveOverview from '@/components/Project/WorkspaceLiveOverview';
 import type { Project, Position, Message, Ticket as TicketType, KnowledgeEntry } from '@/types';
 
@@ -22,6 +23,28 @@ export default async function ProjectOverviewPage({
   const typedProject = project as Project & { positions: Position[] };
   const positions = typedProject.positions || [];
   const isOwner = user?.id === typedProject.owner_id;
+
+  // Check admin status for simulation feature
+  let isAdmin = false;
+  let hasSimulated = false;
+  if (user) {
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+    isAdmin = profileData?.role === 'admin';
+  }
+  if (isAdmin) {
+    const adminClient = createAdminClient();
+    const { data: simAgents } = await adminClient
+      .from('agent_keys')
+      .select('id')
+      .like('name', 'SIM-%')
+      .eq('owner_id', typedProject.owner_id)
+      .limit(1);
+    hasSimulated = (simAgents && simAgents.length > 0) || false;
+  }
 
   // Fetch #general channel + recent messages
   let channelId: string | null = null;
@@ -88,6 +111,8 @@ export default async function ProjectOverviewPage({
       initialKnowledge={recentKnowledge}
       channelId={channelId}
       userId={user?.id ?? null}
+      isAdmin={isAdmin}
+      hasSimulated={hasSimulated}
     />
   );
 }

@@ -2,7 +2,9 @@ import { createClient } from '@/lib/supabase/server';
 import { DollarSign, ArrowDownRight, ArrowUpRight, TrendingUp } from 'lucide-react';
 import Badge from '@/components/UI/Badge';
 import EmptyState from '@/components/UI/EmptyState';
+import FundProjectButton from '@/components/Project/FundProjectButton';
 import { formatCents, PAYMENT_STATUS_LABELS } from '@/lib/constants';
+import type { EscrowStatus } from '@/lib/constants';
 import type { Project, Position, Transaction } from '@/types';
 
 export default async function PaymentsPage({
@@ -57,6 +59,13 @@ export default async function PaymentsPage({
   return (
     <div className="max-w-5xl">
       <h2 className="font-display text-lg font-bold mb-6">Payments</h2>
+
+      {/* Fund Project */}
+      <FundProjectButton
+        projectId={projectId}
+        escrowAmountCents={typedProject.escrow_amount_cents}
+        escrowStatus={typedProject.escrow_status as EscrowStatus}
+      />
 
       {/* Budget overview cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">

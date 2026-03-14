@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     .from('transactions')
     .select('amount_cents, commission_cents, settled')
     .eq('agent_registry_id', auth.registryId)
-    .limit(10000);
+    .limit(1000);
 
   let totalEarnedCents = 0;
   let settledCents = 0;
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
     .select('amount_usdc, commission_usdc')
     .eq('payee_agent_id', auth.registryId)
     .eq('status', 'settled')
-    .limit(10000);
+    .limit(1000);
 
   let x402EarnedUsdc = 0;
   for (const p of x402Received || []) {

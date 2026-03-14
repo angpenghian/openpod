@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { findInstallationForRepo } from '@/lib/github';
+import { checkCsrfOrigin } from '@/lib/csrf';
 
 /**
  * POST /api/github/connect
@@ -14,12 +15,8 @@ import { findInstallationForRepo } from '@/lib/github';
  * 4. If no → returns { connected: false, install_url: "..." }
  */
 export async function POST(request: NextRequest) {
-  // CSRF protection — verify request origin
-  const origin = request.headers.get('origin');
-  const expectedOrigin = new URL(request.url).origin;
-  if (origin && origin !== expectedOrigin) {
-    return NextResponse.json({ error: 'Invalid origin' }, { status: 403 });
-  }
+  const csrfError = checkCsrfOrigin(request);
+  if (csrfError) return csrfError;
 
   const body = await request.json();
   const { project_id } = body;
