@@ -1,5 +1,45 @@
 # OpenPod — Chat Log
 
+## Session 32g (2026-03-14) — Deep QA Round 7 (Final 9 fixes)
+
+### What Happened
+- Continuation from S32f (context ran out). Launched 4 parallel audit agents (Round 7).
+- After 99+ fixes in rounds 1-6, only **1 CRITICAL + 8 MEDIUM** real bugs remained.
+- All 9 fixed, build verified (0 TS errors), committed `a3c3661`, pushed to main.
+
+### CRITICAL Fix (1)
+1. **transfer.reversed silent failure** — `stripe/webhooks/route.ts:95-97`: escrow refund failure only logged `console.error`, never threw. Stripe got 200, never retried = money permanently lost. Now throws to get 500 → Stripe retries.
+
+### MEDIUM Fixes (8)
+2. **Falsy zero: budget_cents** — `agent/v1/projects/route.ts:123`: `budget_cents || null` treated `0` as falsy → `null`. Changed to `??`.
+3. **Falsy zero: pay_rate_cents** — Same file line 178: `pay_rate_cents || null` → `??`.
+4. **acceptance_criteria type mismatch** — `agent/v1/tickets/[ticketId]/route.ts:179`: checked `typeof === 'string'` but field is an array → size limit never triggered. Fixed to `Array.isArray()` with `.slice(0, 50)` + 1000 char per-item limit.
+5. **parseInt NaN: agents route** — `agent/v1/agents/route.ts:11-12`: `parseInt('abc')` → `NaN` → `.range(NaN, NaN)`. Added `|| 20` / `|| 0` fallback.
+6. **parseInt NaN: projects route** — `agent/v1/projects/route.ts:16-17`: same fix. Also guarded `min_budget`/`max_budget` with `isNaN()` check.
+7. **parseInt NaN: messages route** — `agent/v1/messages/route.ts:14`: added `|| 50` fallback.
+8. **hasCycle array mutation** — `dependencies/route.ts:138`: `depMap.get(start)` returned a reference, `.pop()` mutated shared array. Fixed with spread copy `[...(depMap.get(start) || [])]`.
+9. **ReviewSection missing ticket_id** — `TicketDetail.tsx:522-528`: review existence check queried `project_id + agent_registry_id` but missing `ticket_id` → blocked reviews on other tickets by the same agent. Added `.eq('ticket_id', ticketId)`.
+10. **Stale status after approval** — `TicketDetail.tsx:127`: approval set `approval_status` but not `status` in React state. Now syncs `setStatus('done')` on approve, `setStatus('in_progress')` on revise.
+
+### Files Changed (7)
+- `src/app/api/stripe/webhooks/route.ts` — throw on escrow refund failure
+- `src/app/api/agent/v1/projects/route.ts` — ?? operator + parseInt guards
+- `src/app/api/agent/v1/agents/route.ts` — parseInt guards
+- `src/app/api/agent/v1/messages/route.ts` — parseInt guard
+- `src/app/api/agent/v1/tickets/[ticketId]/route.ts` — acceptance_criteria array fix
+- `src/app/api/projects/[projectId]/dependencies/route.ts` — hasCycle spread copy
+- `src/components/Project/TicketDetail.tsx` — ticket_id filter + status sync
+
+### Build
+- 0 TypeScript errors, clean `next build`
+- Commit `a3c3661`, pushed to main → Vercel auto-deploy
+
+### Running Total
+- **Sessions 32-32g:** 108+ total fixes across 7 rounds
+- All CRITICAL issues resolved. Remaining issues are LOW/informational only.
+
+---
+
 ## Session 32f (2026-03-14) — Deep QA Round 6 (CSRF + Input Validation)
 
 ### What Happened

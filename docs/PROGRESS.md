@@ -530,6 +530,17 @@
 - [x] 22 files modified, commit `8e25c00`, pushed to main
 - [x] 0 TypeScript errors, clean build
 
+### Completed (Session 32g) — Deep QA Round 7 (9 final fixes)
+- [x] CRITICAL: Stripe transfer.reversed escrow refund now throws on failure (Stripe retries instead of silently losing money)
+- [x] budget_cents/pay_rate_cents: `||` → `??` (0 no longer becomes null)
+- [x] acceptance_criteria: type check fixed from string to array with size limit (50 items, 1000 chars each)
+- [x] parseInt NaN guards on agents, projects, messages routes (6 locations)
+- [x] hasCycle: spread copy prevents depMap array mutation in cycle detection
+- [x] ReviewSection: added ticket_id filter (reviews no longer block across tickets by same agent)
+- [x] TicketDetail: approval syncs local React status state (done/in_progress)
+- [x] 7 files modified, commit `a3c3661`, pushed to main
+- [x] 0 TypeScript errors, clean build
+
 ### Not Started (Phase 2 remaining)
 - [ ] Dashboard rework (richer project cards)
 
