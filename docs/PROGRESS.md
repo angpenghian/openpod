@@ -402,6 +402,117 @@
 - [x] Session 30 code committed (`b1801e6`) — 26 files, 6346 insertions
 - [x] Pushed to main → Vercel auto-deploy triggered
 
+### Completed (Session 32) — Deep QA + Security Fix (16 Issues)
+- [x] Schema v11: atomic `increment_escrow()`, `deduct_escrow()` RPCs, wallet uniqueness index
+- [x] C2: Self-approval prevention (agent PM can't approve own tickets)
+- [x] C3: Atomic escrow operations via Postgres RPC (webhook + approval flows)
+- [x] C4: `payment_status === 'paid'` check on checkout.session.completed
+- [x] C5: ApplicationActions moved to server endpoint (was client-side Supabase bypassing auth)
+- [x] C6: Workspace layout blocks non-owners from non-public projects (IDOR fix)
+- [x] C7: Role-based status transitions (workers: todo→in_progress, in_progress→in_review only)
+- [x] C8: `payout_cents > 0` required for ticket approval
+- [x] H1: Stripe settle return check → ledger fallback on failure
+- [x] H2: Self-delegation prevention in /delegate
+- [x] H3: SSRF hardening (IPv6 ULA, link-local, credentials, .localhost, 0.x.x.x)
+- [x] H4: Project creation rollback if PM position fails
+- [x] H6: `payoutsEnabled` check in Connect status + webhook handler
+- [x] H7: Workers can only update tickets assigned to them
+- [x] Leads blocked from in_review→done (must use approval endpoint)
+- [x] Application accept uses position role_level for proper member role
+- [x] 17 files (15 modified, 2 new), 381 insertions
+- [x] Commit `8116af5`, pushed to main
+- [x] Schema v11 deployed to Supabase
+- [x] 0 TypeScript errors, clean build
+
+### Completed (Session 32b) — Deep QA Round 2 (8 more fixes)
+- [x] C1: Double-approval guard — both approve endpoints check `approval_status === 'approved'` → 409
+- [x] C2: Transfer-before-deduct — `settleStripeTransfer()` deducts escrow first, refunds on Stripe failure
+- [x] C3: x402 tx_hash unique index (schema v12) — prevents replay attacks
+- [x] C4: transactions.project_id nullable (schema v12) — x402 delegations without a project
+- [x] H1: Application accept race condition — atomic position fill (`WHERE status = 'open'`) → 409 if filled
+- [x] H2: Human ticket updates via server PATCH endpoint — replaces client-side Supabase writes
+- [x] H3: approved_by FK mismatch — agent approve stores `auth.ownerId` (profile ID) not `auth.agentKeyId`
+- [x] H4: Stripe webhook atomic idempotency — insert-first, catch unique violation (23505)
+- [x] Schema v12 written (x402 tx_hash unique, stripe_events unique, transactions nullable project_id)
+- [x] New: `src/app/api/projects/[projectId]/tickets/[ticketId]/route.ts` (human PATCH)
+- [x] 9 files (7 modified, 2 new), commit `a502065`, pushed to main
+- [x] 0 TypeScript errors, clean build
+- [ ] **Pending:** Apply schema-v12.sql in Supabase SQL Editor
+
+### Completed (Session 32c) — Deep QA Round 3 (10 more fixes)
+- [x] C1: Webhook catch returns 500 on processing error (Stripe retries instead of silently dropping)
+- [x] C3: Escrow status check includes `partially_released` (was only `funded`, blocking subsequent payouts)
+- [x] C4: Human ticket PATCH enforces status transition map (prevents invalid jumps like todo → done)
+- [x] C5: Application accept/reject uses position join instead of non-existent `project_id` column (was 500 crash)
+- [x] C6: x402 payment insert checks for unique violation → 409 "replay detected" (was silently continuing)
+- [x] H1+H2: Both approve routes add `position_id` + `agent_registry_id` to transaction inserts (audit trail)
+- [x] H5: Agent position browse filters by `visibility = 'public'` (private positions were exposed)
+- [x] H6: Ticket approval sets `status: 'done'` (Kanban now reflects approved tickets)
+- [x] H8: UUID validation on comments + webhooks delete endpoints
+- [x] 4 false positives identified and documented (gross-vs-net, unbounded payout, earnings trigger, x402 commission)
+- [x] 9 files modified, commit `14d84f0`, pushed to main
+- [x] 0 TypeScript errors, clean build
+
+### Completed (Session 32d) — Deep QA Round 4 (25 more fixes)
+- [x] C1: Transfer reversal refunds GROSS amount (stored in Stripe metadata, was refunding NET — 10% lost per reversal)
+- [x] C2: x402 invoke endpoint replay protection — checks 23505 unique violation (delegate was protected, invoke was not)
+- [x] C3: Project deletion blocked if escrow_amount_cents > 0 (client-side check, prevents money destruction)
+- [x] C4: Settings page redirects non-owners (was exposing all project details to any authenticated user)
+- [x] C5: Heartbeat only shows pending approvals for PM/lead projects (was leaking to worker agents)
+- [x] C6: Ticket creation error handling + retry on ticket_number collision (was silently failing)
+- [x] H1: Apply endpoint checks project visibility — blocks applications to private projects
+- [x] H2: Both approve endpoints check ticket update success before Stripe transfer
+- [x] H3: Heartbeat validates changes_since date format (was crashing with RangeError)
+- [x] H4: Registration rate limiter uses x-real-ip (Vercel sets this, x-forwarded-for is spoofable)
+- [x] H5: Search endpoint rate limited (30 req/min per IP, was unlimited unauthenticated)
+- [x] H6: Balance endpoint bounded queries (LIMIT 10000, was unbounded SELECT)
+- [x] H7: Heartbeat applications filtered to PM/lead projects only
+- [x] H8: Human messages endpoint content capped at 10K chars (agent route had limit, human didn't)
+- [x] H9: Payout upper bound $100K max (prevents accidental/malicious escrow drain)
+- [x] H10: UUID validation on project_id in tickets/messages/knowledge (6 handlers, was passing raw strings to DB)
+- [x] H11: Client-side ticket form shows errors, validates input lengths, handles collision gracefully
+- [x] M: Visibility enum validation on project create (was accepting any string)
+- [x] M: Negative budget rejected in project create
+- [x] M: Position sort_order offset by 2 (was colliding with Context Keeper at sort_order 1)
+- [x] M: role_level validation against whitelist (was accepting arbitrary strings)
+- [x] M: Error step leakage removed from project create catch block
+- [x] M: Null agent_key_id filtered from webhook fire (was passing null to fireWebhooks)
+- [x] M: Agent browse hides unlisted projects (was exposing in marketplace search)
+- [x] M: Transaction type fixed to 'delegation' and 'service_invocation' (was all 'deliverable_approved')
+- [x] 19 files modified, commit `7f6e4df`, pushed to main
+- [x] 0 TypeScript errors, clean build
+- [ ] **Pending:** Apply schema-v12.sql in Supabase SQL Editor
+
+### Completed (Session 32e) — Deep QA Round 5 (20 more fixes)
+- [x] C1: TOCTOU double-approval race — atomic WHERE `.neq('approval_status', 'approved')` + `.select('id')` on both approve routes
+- [x] C2: transactions.type CHECK constraint — schema-v13 adds 'service_invocation' + 'delegation' types
+- [x] C3: Webhook escrow increment failure now throws (Stripe retries via 500 response)
+- [x] H1: Stored XSS in JSON-LD — escape `<` chars in `dangerouslySetInnerHTML`
+- [x] H2: max_agents ignored — rewrite accept logic to count members before filling position
+- [x] H3: Registration rate limiter — Redis with in-memory fallback (was in-memory only)
+- [x] H4: `approved_by` stores `auth.agentKeyId` (was `auth.ownerId`)
+- [x] H5: Block approval of rejected tickets (must rework via in_progress → in_review)
+- [x] H7: CSRF origin check on cookie-authenticated endpoints (new `src/lib/csrf.ts`)
+- [x] H8: `account.updated` webhook revokes `stripe_onboarded` when suspended
+- [x] H9: Stripe checkout $1M upper bound cap
+- [x] M1: ILIKE wildcard injection — escape `%` and `_` in browse search (projects + agents)
+- [x] M2: Channel creation limit (50 per project)
+- [x] M3: Mentions array capped at 20 per message
+- [x] M4: Remove `assignee_user_id` from agent API ticket allowlist
+- [x] M5: Field size limits on registration (capabilities ≤20, tools ≤20, description ≤5000, etc.)
+- [x] M6: REVOKE RPC functions from public/anon/authenticated (schema-v13)
+- [x] M7: NaN budget guard in settings page
+- [x] M8: Comment length limit (5000 chars)
+- [x] M9: Channel name validation (alphanumeric + hyphens, max 50 chars)
+- [x] M10: Settings title/description truncation (200/5000 chars)
+- [x] M11: Escrow status guard — don't overwrite funded status
+- [x] M12: Position earnings trigger fix — only add amount_cents, not commission (schema-v13)
+- [x] M13: Zero-price guard on invoke/delegate endpoints
+- [x] Schema v13 written (pending apply in Supabase)
+- [x] 18 files (16 modified, 2 new), commit `a1da936`, pushed to main
+- [x] 0 TypeScript errors, clean build
+- [ ] **Pending:** Apply schema-v12.sql + schema-v13.sql in Supabase SQL Editor
+
 ### Not Started (Phase 2 remaining)
 - [ ] Dashboard rework (richer project cards)
 

@@ -1,5 +1,208 @@
 # OpenPod — Chat Log
 
+## Session 32e (2026-03-14) — Deep QA Round 5 (20 more fixes)
+
+### What Happened
+- User requested "again deep QA and DEEP security checks" — launched 4 parallel audit agents (Round 5)
+- **4 agents completed:** Agent API lifecycle (12), Security (12), Human journey (10), Payment flows (9)
+- **43 raw findings → 25 unique after dedup** (3 CRITICAL + 9 HIGH + 13 MEDIUM + 5 LOW deferred)
+- 2 false positives identified (webhook DNS rebinding = working as designed, stale escrow read = RPC is the real guard)
+- All CRITICAL + HIGH + MEDIUM fixed. Schema v13 written.
+
+### Key Decisions
+- CSRF protection: shared `checkCsrfOrigin()` utility for cookie-authenticated endpoints
+- TOCTOU race fix: atomic WHERE `.neq('approval_status', 'approved')` instead of separate check
+- Channel creation limit: 50 per project
+- Mentions array: capped at 20 per message
+- Comment length: 5000 chars max
+- Settings title/desc: truncated at 200/5000 chars
+- `assignee_user_id` removed from agent API allowlist (agents shouldn't set human assignees)
+
+### Files Changed (18)
+- `src/app/api/agent/v1/tickets/[ticketId]/approve/route.ts` — C1 TOCTOU race, H4 approved_by fix, H5 rejected guard
+- `src/app/api/projects/[projectId]/tickets/[ticketId]/approve/route.ts` — C1 TOCTOU race, H5 rejected guard, H7 CSRF
+- `supabase/schema-v13.sql` — NEW: C2 transactions CHECK, M6 REVOKE RPCs, H6 escrow deletion trigger, M12 earnings trigger
+- `src/app/api/stripe/webhooks/route.ts` — C3 throw on escrow fail, H8 revoke stripe_onboarded
+- `src/app/agents/[slug]/page.tsx` — H1 JSON-LD XSS prevention
+- `src/app/api/projects/[projectId]/applications/[applicationId]/route.ts` — H2 max_agents respect
+- `src/app/api/agent/v1/register/route.ts` — H3 Redis rate limiter, M5 field size limits
+- `src/lib/csrf.ts` — NEW: H7 CSRF origin check utility
+- `src/app/api/stripe/checkout/route.ts` — H7 CSRF, H9 $1M cap, M11 escrow_status guard
+- `src/app/api/agent/v1/services/[agentSlug]/invoke/route.ts` — C2 tx error check, M13 zero-price guard
+- `src/app/api/agent/v1/delegate/route.ts` — C2 tx error check, M13 zero-price guard
+- `src/app/projects/page.tsx` — M1 ILIKE wildcard injection fix
+- `src/app/agents/page.tsx` — M1 ILIKE wildcard injection fix
+- `src/app/api/agent/v1/messages/route.ts` — M2 channel limit, M3 mentions limit
+- `src/app/api/agent/v1/tickets/[ticketId]/route.ts` — M4 remove assignee_user_id
+- `src/app/projects/[projectId]/settings/page.tsx` — M7 NaN budget, M10 title/desc truncation
+- `src/components/Project/TicketDetail.tsx` — M8 comment length limit
+- `src/components/Project/ChatArea.tsx` — M9 channel name validation
+
+### Running Total
+- **Sessions 32-32e:** 79 total fixes (27C + 36H + 16M) across 5 rounds
+- 0 TypeScript errors, clean build
+- Commit `a1da936`, pushed to main
+
+---
+
+## Session 32d (2026-03-14) — Deep QA Round 4 (25 more fixes)
+
+### What Happened
+- User requested "again / do deep qa and deep security" — launched 4 parallel audit agents
+- **4 agents completed:** Human journey (23 findings), Agent API lifecycle (14), Payment flows (14), Security (17)
+- **68 raw findings → 34 unique after dedup → 25 real issues fixed** (6 CRITICAL + 11 HIGH + 8 MEDIUM)
+- All false positives identified: public project visibility (by design), only-owner messages (design choice), no FundProjectButton (missing feature), no refund mechanism (missing feature)
+
+### Key Decisions
+- Payout upper bound set at $100,000 (10_000_000 cents)
+- Settings page: client-side ownership redirect (server layout already checks, this is defense-in-depth)
+- Ticket creation: retry on collision (3 attempts) rather than DB-level sequence
+- Search rate limit: 30/min per IP, in-memory (matches registration pattern)
+- Agent browse: removed 'unlisted' from browse — unlisted = link-only access
+
+### Files Changed (19)
+- `src/lib/stripe.ts` — gross_payout_cents in transfer metadata
+- `src/app/api/stripe/webhooks/route.ts` — reversal uses gross from metadata
+- `src/app/api/agent/v1/services/[agentSlug]/invoke/route.ts` — x402 replay protection + transaction type fix
+- `src/app/api/agent/v1/delegate/route.ts` — transaction type 'delegation'
+- `src/app/projects/[projectId]/settings/page.tsx` — ownership check + escrow deletion guard
+- `src/app/api/agent/v1/heartbeat/route.ts` — role filter + date validation
+- `src/app/api/agent/v1/tickets/route.ts` — UUID validation + collision retry
+- `src/app/api/agent/v1/apply/route.ts` — project visibility check
+- `src/app/api/agent/v1/tickets/[ticketId]/approve/route.ts` — update check + payout cap
+- `src/app/api/projects/[projectId]/tickets/[ticketId]/approve/route.ts` — update check + payout cap
+- `src/app/api/agent/v1/register/route.ts` — x-real-ip
+- `src/app/api/search/route.ts` — rate limiting
+- `src/app/api/agent/v1/me/balance/route.ts` — bounded queries
+- `src/app/api/projects/[projectId]/messages/route.ts` — content length limit
+- `src/app/api/agent/v1/messages/route.ts` — UUID validation + null filter
+- `src/app/api/agent/v1/knowledge/route.ts` — UUID validation
+- `src/app/api/agent/v1/projects/route.ts` — public only + role_level + sort_order
+- `src/app/api/projects/route.ts` — visibility validation + budget + error leakage
+- `src/components/Project/CreateTicketForm.tsx` — error handling + input limits
+
+### Running Total
+- **Sessions 32-32d:** 59 total fixes (24C + 27H + 8M) across 4 rounds
+- 0 TypeScript errors, clean build
+- Commit `7f6e4df`, pushed to main
+
+---
+
+## Session 32c (2026-03-14) — Deep QA Round 3 (10 more fixes)
+
+### What Happened
+- After S32b's 8 fixes, launched 5 parallel audit agents (human journey, agent lifecycle, payment flows, security, feature inventory)
+- Found ~9 CRITICAL + ~10 HIGH across all agents. After dedup and false positive elimination: 6 CRITICAL + 4 HIGH real issues. All fixed.
+- Also delivered: full website opinion, 64 shipped features inventory, competitive gap analysis
+
+### False Positives Identified (4 — NOT fixed)
+1. **C2 (gross vs net)** — Escrow credits Stripe's amount_total (gross). 10% commission absorbs Stripe's ~3.2% fee. Bookkeeping only.
+2. **C7 (unbounded payout)** — `deduct_escrow` RPC already has atomic WHERE preventing overdraw.
+3. **H3 (110% earnings trigger)** — No such trigger exists in any schema file. Audit agent hallucinated.
+4. **H4 (x402 commission direction)** — Design-level issue, x402 isn't live yet.
+
+### CRITICAL Fixes (6)
+1. **C1** — Webhook catch returned 200 on error → Stripe wouldn't retry → escrow never credited. Now returns 500.
+2. **C3** — Escrow status `partially_released` blocked all subsequent Stripe transfers. Both approve routes now check `['funded', 'partially_released'].includes()`.
+3. **C4** — Human ticket PATCH allowed any status → any status (e.g., todo → done). Added transition map validation.
+4. **C5** — Application accept/reject queried `project_id` on applications table — column doesn't exist. Fixed to join via `positions!inner(project_id)`.
+5. **C6** — x402 payment insert result wasn't checked — unique index replay prevention broken in code. Now catches 23505 → 409 "replay detected".
+
+### HIGH Fixes (4)
+1. **H1+H2** — Agent approve route missing `position_id` and `agent_registry_id` on transaction insert. Added lookup + both fields (human approve already had position_id, added agent_registry_id).
+2. **H5** — Private project positions were exposed to any authenticated agent via browse. Added `.eq('visibility', 'public')` filter.
+3. **H6** — Ticket approval didn't set status to `done` — Kanban showed approved tickets stuck in `in_review`. Both approve routes now set `status: 'done'`.
+4. **H8** — Comments endpoint and webhooks delete endpoint missing UUID validation. Added UUID_REGEX checks.
+
+### Files (9)
+- Modified: webhooks/route.ts, agent approve, human approve, ticket PATCH, applications route, delegate, positions, comments, webhooks/[webhookId]
+
+### Deploy
+- Commit `14d84f0` — pushed to main → Vercel auto-deploy
+- Schema v12 still pending apply in Supabase
+
+### Website Opinion (delivered to user)
+- Architecture impressive (40+ endpoints, dual payment rails, full lifecycle)
+- 0/0/0 problem is the #1 killer — empty restaurant
+- Payment math had real bugs (now fixed)
+- C5 crash in application accept was broken in production
+- Engineering 80% there, product 0% there. Need seed content + one real agent.
+
+### Feature Inventory (delivered to user)
+- 64 SHIPPED, 6 PARTIAL, 3 UI-ONLY/MISSING, 8 NOT BUILT
+- 17 competitive gaps vs Unicity Labs, SwarmMarket, Openlancer
+
+---
+
+## Session 32b (2026-03-14) — Deep QA Round 2 (8 more fixes)
+
+### What Happened
+- After S32's 16 fixes, launched 4 parallel audit agents (human journey, agent lifecycle, payment flows, security)
+- Found 4 CRITICAL + 4 HIGH new issues. All fixed + verified.
+- Stripe Connect confirmed fully live (user verified via dashboard screenshots)
+
+### CRITICAL Fixes (4)
+1. **C1** — Double-approval guard: both approve endpoints check `approval_status === 'approved'` → 409
+2. **C2** — Transfer-before-deduct: `settleStripeTransfer()` deducts escrow first, refunds on failure
+3. **C3** — x402 tx_hash unique index (schema v12) prevents replay attacks
+4. **C4** — transactions.project_id nullable (schema v12) for x402 delegations
+
+### HIGH Fixes (4)
+1. **H1** — Application accept race: atomic position fill (`WHERE status = 'open'`) → 409
+2. **H2** — Human ticket updates via server PATCH endpoint (was client-side Supabase)
+3. **H3** — approved_by FK: agent approve stores `auth.ownerId` not `auth.agentKeyId`
+4. **H4** — Stripe webhook idempotency: insert-first, catch 23505
+
+### Files (9)
+- NEW: `src/app/api/projects/[projectId]/tickets/[ticketId]/route.ts`, `supabase/schema-v12.sql`
+- Modified: agent approve, human approve, stripe.ts, webhooks, app route, TicketDetail.tsx, types
+
+### Deploy
+- Commit `a502065` — pushed to main → Vercel auto-deploy
+- Schema v12 pending apply in Supabase
+
+---
+
+## Session 32 (2026-03-14) — Deep QA + Security Fix (16 issues)
+
+### What Happened
+- Deep audit: 4 parallel agents audited payment system, agent API, human-side flows, and security
+- Found ~50 issues. After dedup: 8 CRITICAL, 8 HIGH, 8 MEDIUM
+- Fixed all 16 CRITICAL + HIGH issues across 14 files (12 modified, 2 new)
+- Schema v11 deployed (atomic escrow functions + wallet uniqueness index)
+
+### CRITICAL Fixes (8)
+1. **C2** — Self-approval prevention: agent PM cannot approve tickets assigned to themselves (403)
+2. **C3** — Atomic escrow operations via Postgres RPC (`increment_escrow`, `deduct_escrow`) replacing read-then-write
+3. **C4** — `payment_status === 'paid'` check before crediting escrow on checkout.session.completed
+4. **C5** — ApplicationActions moved from client-side Supabase writes to server endpoint with ownership verification
+5. **C6** — Workspace layout blocks non-owners from non-public project workspaces (IDOR fix)
+6. **C7** — Role-based status transitions: workers limited to `todo→in_progress`, `in_progress→in_review`; leads blocked from `in_review→done`
+7. **C8** — `payout_cents > 0` required for ticket approval (both agent + human endpoints)
+8. **H7** (elevated) — Workers can only update tickets assigned to them (or self-assign unassigned)
+
+### HIGH Fixes (8)
+1. **H1** — Stripe settle return check: if `settleStripeTransfer()` fails → fallback to `payment_rail: 'ledger'`
+2. **H2** — Self-delegation prevention in `/delegate` endpoint (400)
+3. **H3** — SSRF hardening: block credentials in URL, IPv6 ULA (fc00::/7), link-local (fe80::/10), `.localhost` TLD, `0.x.x.x`
+4. **H4** — Project creation rollback: if PM position creation fails → delete project → return 500
+5. **H6** — `payoutsEnabled` check in Connect status endpoint + webhook `account.updated` handler
+6. Worker ticket ownership enforcement (H7, combined with C7 above)
+7. Leads blocked from `in_review→done` (combined with C7)
+8. Application server route handles role_level from position (proper role on accept)
+
+### Files Changed (17)
+- NEW: `src/app/api/projects/[projectId]/applications/[applicationId]/route.ts`
+- NEW: `supabase/schema-v11.sql`
+- Modified: webhooks/route.ts, stripe.ts, agent approve, human approve, ticket PATCH, delegate, webhooks.ts, projects/route.ts, connect/status, layout.tsx, team/page.tsx, ApplicationActions.tsx, docs (3)
+
+### Deploy
+- Commit `8116af5` — 17 files, 381 insertions
+- Pushed to main → Vercel auto-deploy
+- Schema v11 applied in Supabase SQL Editor
+
+---
+
 ## Session 31 (2026-03-14) — Stripe Setup + Deploy
 
 ### What Happened
