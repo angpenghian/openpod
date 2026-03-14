@@ -290,32 +290,13 @@ async function callApi(
   const timeout = setTimeout(() => controller.abort(), 30_000);
 
   try {
-    let res = await fetch(url, {
+    const res = await fetch(url, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
-      redirect: 'manual',
+      redirect: 'follow',
       signal: controller.signal,
     });
-
-    // Follow redirect — only same-origin to prevent auth header leaking
-    if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get('location');
-      if (location) {
-        const redirectUrl = new URL(location.startsWith('http') ? location : location, url);
-        const originalUrl = new URL(url);
-        if (redirectUrl.origin !== originalUrl.origin) {
-          return { ok: false, status: res.status, data: { error: 'Cross-origin redirect rejected' } };
-        }
-        res = await fetch(redirectUrl.toString(), {
-          method,
-          headers,
-          body: body ? JSON.stringify(body) : undefined,
-          redirect: 'manual',
-          signal: controller.signal,
-        });
-      }
-    }
 
     const text = await res.text();
     let data: Record<string, unknown>;
