@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/UI/Button';
-import { Bot, Square, AlertCircle, Play } from 'lucide-react';
+import { Bot, Square, AlertCircle, Play, RotateCcw } from 'lucide-react';
 
 interface SimulationEvent {
   type: 'system' | 'thinking' | 'action' | 'error' | 'refresh' | 'round' | 'done' | 'keepalive';
@@ -11,6 +11,8 @@ interface SimulationEvent {
   action: string;
   round?: number;
 }
+
+const MAX_EVENTS = 500;
 
 interface LiveSimulationPanelProps {
   projectId: string;
@@ -25,6 +27,7 @@ export default function LiveSimulationPanel({ projectId, hasGitHub }: LiveSimula
   const [maxRounds, setMaxRounds] = useState(20);
   const [currentRound, setCurrentRound] = useState(0);
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
@@ -35,6 +38,14 @@ export default function LiveSimulationPanel({ projectId, hasGitHub }: LiveSimula
     }
   }, [events]);
 
+  // Cleanup on unmount — cancel reader + abort fetch
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      readerRef.current?.cancel().catch(() => {});
+    };
+  }, []);
+
   async function startSimulation() {
     setRunning(true);
     setError(null);
@@ -42,11 +53,15 @@ export default function LiveSimulationPanel({ projectId, hasGitHub }: LiveSimula
     setDone(false);
     setCurrentRound(0);
 
+    const abort = new AbortController();
+    abortRef.current = abort;
+
     try {
       const res = await fetch(`/api/projects/${projectId}/simulate-live`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ maxRounds }),
+        signal: abort.signal,
       });
 
       if (!res.ok) {
@@ -98,11 +113,29 @@ export default function LiveSimulationPanel({ projectId, hasGitHub }: LiveSimula
               setError(event.action);
             }
 
-            setEvents(prev => [...prev, event]);
+            // Truncate agent/action to prevent LLM prompt injection display
+            event.agent = event.agent.slice(0, 50);
+            event.action = event.action.slice(0, 500);
+
+            // Cap event list to prevent memory growth
+            setEvents(prev => {
+              const next = [...prev, event];
+              return next.length > MAX_EVENTS ? next.slice(-MAX_EVENTS) : next;
+            });
           } catch {
             // Malformed JSON line — skip
           }
         }
+      }
+
+      // Process any remaining buffer
+      if (buffer.trim().startsWith('data: ')) {
+        try {
+          const event: SimulationEvent = JSON.parse(buffer.trim().slice(6));
+          if (event.type !== 'keepalive') {
+            setEvents(prev => [...prev, event]);
+          }
+        } catch { /* ignore */ }
       }
     } catch (err) {
       if (err instanceof Error && err.name !== 'AbortError') {
@@ -111,20 +144,33 @@ export default function LiveSimulationPanel({ projectId, hasGitHub }: LiveSimula
     }
 
     readerRef.current = null;
+    abortRef.current = null;
     setRunning(false);
   }
 
   function stopSimulation() {
+    abortRef.current?.abort();
     if (readerRef.current) {
-      readerRef.current.cancel();
+      readerRef.current.cancel().catch(() => {});
       readerRef.current = null;
     }
+    abortRef.current = null;
     setRunning(false);
     setDone(true);
   }
 
+  function resetSimulation() {
+    setDone(false);
+    setEvents([]);
+    setError(null);
+    setCurrentRound(0);
+  }
+
   // Count done tickets from events
-  const ticketsDone = events.filter(e => e.action.includes('Approved ticket') || e.action.includes('All tickets completed')).length;
+  const ticketsDone = useMemo(
+    () => events.filter(e => e.action.includes('Approved ticket') || e.action.includes('All tickets completed')).length,
+    [events]
+  );
 
   return (
     <div className="card-glow p-4 rounded-md bg-surface border border-warning/30 mb-6">
@@ -153,15 +199,19 @@ export default function LiveSimulationPanel({ projectId, hasGitHub }: LiveSimula
               <Square className="h-3 w-3 mr-1" />
               Stop
             </Button>
+          ) : done ? (
+            <Button size="sm" variant="secondary" onClick={resetSimulation}>
+              <RotateCcw className="h-3 w-3 mr-1" />
+              Reset
+            </Button>
           ) : (
             <Button
               size="sm"
               variant="secondary"
               onClick={startSimulation}
-              disabled={done}
             >
               <Play className="h-3 w-3 mr-1" />
-              {done ? 'Complete' : 'Start Live Sim'}
+              Start Live Sim
             </Button>
           )}
         </div>

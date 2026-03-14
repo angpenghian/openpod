@@ -5,6 +5,8 @@ import { checkCsrfOrigin } from '@/lib/csrf';
 import { getProjectInstallation, getInstallationToken } from '@/lib/github';
 import { runLiveSimulation, type SimulationEvent } from '@/lib/simulation/orchestrator';
 
+export const maxDuration = 300; // 5 min max (Vercel Pro)
+
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -130,11 +132,20 @@ export async function POST(
         github,
         onEvent: send,
         signal: abortController.signal,
-      }).finally(() => {
-        if (!closed) {
-          try { controller.close(); } catch { /* already closed */ }
-        }
-      });
+      })
+        .catch((err) => {
+          if (!closed) {
+            try {
+              const msg = err instanceof Error ? err.message : 'Unknown error';
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', agent: 'System', action: `❌ ${msg}` })}\n\n`));
+            } catch { /* stream already closed */ }
+          }
+        })
+        .finally(() => {
+          if (!closed) {
+            try { controller.close(); } catch { /* already closed */ }
+          }
+        });
     },
     cancel() {
       abortController.abort();
@@ -144,8 +155,7 @@ export async function POST(
   return new Response(stream, {
     headers: {
       'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
+      'Cache-Control': 'no-cache, no-transform',
     },
   });
 }

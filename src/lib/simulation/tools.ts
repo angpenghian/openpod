@@ -285,37 +285,49 @@ async function callApi(
     headers['Content-Type'] = 'application/json';
   }
 
-  // Use redirect: 'manual' to prevent auth header stripping on redirects.
-  // If redirected, follow manually while preserving the Authorization header.
-  let res = await fetch(url, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-    redirect: 'manual',
-  });
+  // 30s timeout to prevent hanging on stuck API calls
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
 
-  // Follow redirect while keeping auth header (fetch strips it by default)
-  if (res.status >= 300 && res.status < 400) {
-    const location = res.headers.get('location');
-    if (location) {
-      const redirectUrl = location.startsWith('http') ? location : new URL(location, url).toString();
-      res = await fetch(redirectUrl, {
-        method,
-        headers,
-        body: body ? JSON.stringify(body) : undefined,
-        redirect: 'manual',
-      });
-    }
-  }
-
-  const text = await res.text();
-  let data: Record<string, unknown>;
   try {
-    data = JSON.parse(text);
-  } catch {
-    data = { error: `Non-JSON response (${res.status}): ${text.slice(0, 200)}` };
+    let res = await fetch(url, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+      redirect: 'manual',
+      signal: controller.signal,
+    });
+
+    // Follow redirect — only same-origin to prevent auth header leaking
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get('location');
+      if (location) {
+        const redirectUrl = new URL(location.startsWith('http') ? location : location, url);
+        const originalUrl = new URL(url);
+        if (redirectUrl.origin !== originalUrl.origin) {
+          return { ok: false, status: res.status, data: { error: 'Cross-origin redirect rejected' } };
+        }
+        res = await fetch(redirectUrl.toString(), {
+          method,
+          headers,
+          body: body ? JSON.stringify(body) : undefined,
+          redirect: 'manual',
+          signal: controller.signal,
+        });
+      }
+    }
+
+    const text = await res.text();
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { error: `Non-JSON response (${res.status})` };
+    }
+    return { ok: res.ok, status: res.status, data };
+  } finally {
+    clearTimeout(timeout);
   }
-  return { ok: res.ok, status: res.status, data };
 }
 
 export async function executeApiTool(
@@ -350,9 +362,9 @@ export async function executeApiTool(
       case 'update_ticket': {
         const ticketId = String(args.ticket_id);
         const updateBody: Record<string, unknown> = {};
-        if (args.status) updateBody.status = args.status;
-        if (args.branch) updateBody.branch = args.branch;
-        if (args.deliverables) updateBody.deliverables = args.deliverables;
+        for (const field of ['status', 'branch', 'deliverables', 'title', 'description', 'priority', 'labels']) {
+          if (args[field] !== undefined) updateBody[field] = args[field];
+        }
         // Self-assign if changing to in_progress and no explicit assignee
         if (args.status === 'in_progress' && !args.assignee_agent_key_id) {
           updateBody.assignee_agent_key_id = ctx.agentKeyId;
@@ -417,7 +429,7 @@ export async function executeApiTool(
         const ticketId = String(args.ticket_id);
         const { ok, status, data } = await callApi(ctx, 'POST', `/api/agent/v1/tickets/${ticketId}/approve`, {
           action: 'approve',
-          payout_cents: 100, // Nominal payout for simulation
+          payout_cents: 0, // No real payout for simulation
           comment: String(args.comment || 'Approved by PM'),
         });
         if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ approve_ticket failed (${status}: ${String(data.error || 'unknown').slice(0, 80)})` };

@@ -10,6 +10,7 @@
  *   5. Cleanup — set all SIM keys to is_active: false
  */
 
+import crypto from 'crypto';
 import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { createAdminClient } from '@/lib/supabase/admin';
@@ -117,12 +118,7 @@ function findDomain(title: string): string | null {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function generateApiKey(): string {
-  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let key = 'openpod_sim_';
-  for (let i = 0; i < 32; i++) {
-    key += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return key;
+  return 'openpod_sim_' + crypto.randomBytes(24).toString('base64url');
 }
 
 function getToolsForRole(roleLevel: string, hasGitHub: boolean): typeof OPENPOD_TOOLS {
@@ -142,8 +138,9 @@ function getToolsForRole(roleLevel: string, hasGitHub: boolean): typeof OPENPOD_
 export async function runLiveSimulation(config: SimulationConfig): Promise<void> {
   const { projectId, project, maxRounds, baseUrl, openaiApiKey, userId, github, onEvent, signal } = config;
   const db = createAdminClient();
-  const openai = new OpenAI({ apiKey: openaiApiKey });
+  const openai = new OpenAI({ apiKey: openaiApiKey, timeout: 60_000 });
   const agents: SimulationAgent[] = [];
+  const allCreatedKeyIds: string[] = [];
 
   function emit(event: SimulationEvent) {
     if (signal.aborted) return;
@@ -154,10 +151,14 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
     return signal.aborted;
   }
 
-  // Keep-alive timer
+  // Keep-alive timer (with try-catch so it doesn't throw after stream closes)
   const keepAliveInterval = setInterval(() => {
-    if (!isAborted()) {
-      emit({ type: 'keepalive', agent: 'System', action: '' });
+    try {
+      if (!isAborted()) {
+        emit({ type: 'keepalive', agent: 'System', action: '' });
+      }
+    } catch {
+      clearInterval(keepAliveInterval);
     }
   }, 25_000);
 
@@ -302,6 +303,7 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
         .single();
 
       if (!pmKey) throw new Error('Failed to create PM agent key');
+      allCreatedKeyIds.push(pmKey.id);
 
       // Assign PM to position
       await db.from('applications').insert({
@@ -398,14 +400,19 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
           if (isAborted()) break;
           if (toolCall.type !== 'function') continue;
 
-          const args = JSON.parse(toolCall.function.arguments);
+          let args;
+          try { args = JSON.parse(toolCall.function.arguments); } catch {
+            emit({ type: 'error', agent: 'Project Manager', action: '⚠️ Malformed tool args, skipping' });
+            continue;
+          }
           let reportsTo: string | null = pmPositionId;
           if (args.reports_to_title && typeof args.reports_to_title === 'string') {
+            const escapedTitle = String(args.reports_to_title).replace(/%/g, '\\%').replace(/_/g, '\\_');
             const { data: match } = await db
               .from('positions')
               .select('id')
               .eq('project_id', projectId)
-              .ilike('title', args.reports_to_title)
+              .ilike('title', escapedTitle)
               .maybeSingle();
             if (match) reportsTo = match.id;
             else {
@@ -413,7 +420,7 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
                 .from('positions')
                 .select('id')
                 .eq('project_id', projectId)
-                .ilike('title', `%${args.reports_to_title}%`)
+                .ilike('title', `%${escapedTitle}%`)
                 .limit(1)
                 .maybeSingle();
               if (fuzzy) reportsTo = fuzzy.id;
@@ -478,17 +485,22 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
             if (isAborted()) break;
             if (toolCall.type !== 'function') continue;
 
-            const args = JSON.parse(toolCall.function.arguments);
+            let args;
+            try { args = JSON.parse(toolCall.function.arguments); } catch {
+              emit({ type: 'error', agent: 'Project Manager', action: '⚠️ Malformed worker tool args, skipping' });
+              continue;
+            }
             // Force worker role_level
             args.role_level = 'worker';
 
             let reportsTo: string | null = pmPositionId;
             if (args.reports_to_title && typeof args.reports_to_title === 'string') {
+              const escapedTitle = String(args.reports_to_title).replace(/%/g, '\\%').replace(/_/g, '\\_');
               const { data: match } = await db
                 .from('positions')
                 .select('id')
                 .eq('project_id', projectId)
-                .ilike('title', args.reports_to_title)
+                .ilike('title', escapedTitle)
                 .maybeSingle();
               if (match) reportsTo = match.id;
               else {
@@ -496,7 +508,7 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
                   .from('positions')
                   .select('id')
                   .eq('project_id', projectId)
-                  .ilike('title', `%${args.reports_to_title}%`)
+                  .ilike('title', `%${escapedTitle}%`)
                   .limit(1)
                   .maybeSingle();
                 if (fuzzy) reportsTo = fuzzy.id;
@@ -553,7 +565,11 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
         for (const toolCall of ticketChoice.message.tool_calls) {
           if (isAborted()) break;
           if (toolCall.type !== 'function') continue;
-          const args = JSON.parse(toolCall.function.arguments);
+          let args;
+          try { args = JSON.parse(toolCall.function.arguments); } catch {
+            emit({ type: 'error', agent: 'Project Manager', action: '⚠️ Malformed ticket tool args, skipping' });
+            continue;
+          }
           // Strip labels to prevent capability mismatch
           delete args.labels;
           const { action } = await executeApiTool(toolCall.function.name, args, pmToolCtx);
@@ -614,6 +630,7 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
             .single();
 
           if (!agentKey) continue;
+          allCreatedKeyIds.push(agentKey.id);
 
           await db.from('applications').insert({
             position_id: pos.id,
@@ -709,7 +726,12 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
           if (isAborted()) return;
           if (toolCall.type !== 'function') continue;
 
-          const args = JSON.parse(toolCall.function.arguments);
+          let args;
+          try { args = JSON.parse(toolCall.function.arguments); } catch {
+            emit({ type: 'error', agent: agent.roleTitle, action: '⚠️ Malformed tool args, skipping' });
+            messages.push({ role: 'tool', tool_call_id: toolCall.id, content: 'Error: malformed arguments' });
+            continue;
+          }
           const { result, action } = await executeApiTool(toolCall.function.name, args, toolCtx);
 
           // Emit the human-readable action to SSE stream
@@ -787,6 +809,7 @@ IMPORTANT: When you see tickets from list_tickets, the "id:" field is the UUID y
 
         emit({ type: 'thinking', agent: agent.roleTitle, action: `⏳ ${agent.roleTitle} working (round ${round})...` });
 
+        try {
         const roleDesc = agent.roleLevel === 'project_manager'
           ? 'As PM: review completed work, coordinate the team, create new tickets for gaps, approve finished tickets (approve_ticket), track progress.'
           : getRoleDescription(agent.roleTitle, agent.roleLevel);
@@ -819,6 +842,10 @@ IMPORTANT: Actually DO work — don't just list tickets. Pick one up, work on it
           tools,
           round,
         );
+        } catch (turnErr) {
+          const msg = turnErr instanceof Error ? turnErr.message : 'Unknown';
+          emit({ type: 'error', agent: agent.roleTitle, action: `⚠️ Turn failed: ${msg}` });
+        }
       }
 
       // After each full round, check if all tickets are done
@@ -831,7 +858,7 @@ IMPORTANT: Actually DO work — don't just list tickets. Pick one up, work on it
         .from('tickets')
         .select('id, status')
         .eq('project_id', projectId)
-        .not('status', 'in', '("done","cancelled")');
+        .not('status', 'in', '(done,cancelled)');
 
       if (totalTickets && totalTickets.length > 0 && (!activeTickets || activeTickets.length === 0)) {
         emit({ type: 'system', agent: 'System', action: `🎉 All ${totalTickets.length} tickets completed!` });
@@ -849,10 +876,13 @@ IMPORTANT: Actually DO work — don't just list tickets. Pick one up, work on it
     const message = err instanceof Error ? err.message : 'Unknown error';
     emit({ type: 'error', agent: 'System', action: `❌ Error: ${message}` });
   } finally {
-    // Cleanup: deactivate all SIM agent keys
+    // Cleanup: deactivate ALL created agent keys (even ones not in agents[] due to early abort)
     clearInterval(keepAliveInterval);
-    for (const agent of agents) {
-      await db.from('agent_keys').update({ is_active: false }).eq('id', agent.id);
-    }
+    const keyIds = new Set([...agents.map(a => a.id), ...allCreatedKeyIds]);
+    await Promise.allSettled(
+      Array.from(keyIds).map(id =>
+        db.from('agent_keys').update({ is_active: false }).eq('id', id)
+      )
+    );
   }
 }

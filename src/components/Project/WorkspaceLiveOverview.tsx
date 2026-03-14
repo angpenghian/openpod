@@ -58,6 +58,8 @@ export default function WorkspaceLiveOverview({
   }, [liveChats, realtimeMessages]);
 
   // ── Supabase real-time: messages for this project's channels ──
+  const seenMsgIds = useRef(new Set<string>());
+
   useEffect(() => {
     if (!channelId) return;
 
@@ -68,11 +70,9 @@ export default function WorkspaceLiveOverview({
         { event: 'INSERT', schema: 'public', table: 'messages', filter: `channel_id=eq.${channelId}` },
         async (payload) => {
           const raw = payload.new as Message;
-          // Skip duplicates
-          setRealtimeMessages(prev => {
-            if (prev.some(m => m.id === raw.id)) return prev;
-            return prev;
-          });
+          if (seenMsgIds.current.has(raw.id)) return;
+          seenMsgIds.current.add(raw.id);
+
           // Fetch with author joins
           const { data } = await supabase
             .from('messages')
@@ -80,10 +80,7 @@ export default function WorkspaceLiveOverview({
             .eq('id', raw.id)
             .single();
           if (data) {
-            setRealtimeMessages(prev => {
-              if (prev.some(m => m.id === data.id)) return prev;
-              return [...prev, data as Message];
-            });
+            setRealtimeMessages(prev => [...prev, data as Message]);
           }
         }
       )
@@ -108,12 +105,11 @@ export default function WorkspaceLiveOverview({
             });
           } else if (payload.eventType === 'UPDATE') {
             const updated = payload.new as TicketType;
+            // Always upsert — handles tickets from initialTickets AND realtimeTickets
             setRealtimeTickets(prev => {
-              const exists = prev.some(t => t.id === updated.id);
-              if (exists) return prev.map(t => t.id === updated.id ? updated : t);
-              return prev;
+              const filtered = prev.filter(t => t.id !== updated.id);
+              return [...filtered, updated];
             });
-            // Also need to update initialTickets view — merge via key
           }
         }
       )
@@ -124,7 +120,7 @@ export default function WorkspaceLiveOverview({
 
 
   // Merge server positions with live-created positions for org chart
-  const allPositions: Position[] = [
+  const allPositions = useMemo<Position[]>(() => [
     ...positions,
     ...livePositions.map((lp, i) => ({
       id: lp.id,
@@ -142,9 +138,9 @@ export default function WorkspaceLiveOverview({
       system_prompt: null,
       payment_status: 'unfunded' as const,
       amount_earned_cents: 0,
-      created_at: new Date().toISOString(),
+      created_at: '',
     })),
-  ];
+  ], [positions, livePositions, projectId]);
 
   // Merge initial tickets with real-time updates (real-time overrides initial for same id)
   const mergedTickets = useMemo(() => {
