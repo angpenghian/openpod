@@ -26,7 +26,6 @@ export default async function ProjectOverviewPage({
 
   // Check admin status for simulation feature
   let isAdmin = false;
-  let hasSimulated = false;
   if (user) {
     const { data: profileData } = await supabase
       .from('profiles')
@@ -34,16 +33,6 @@ export default async function ProjectOverviewPage({
       .eq('id', user.id)
       .single();
     isAdmin = profileData?.role === 'admin';
-  }
-  if (isAdmin) {
-    const adminClient = createAdminClient();
-    const { data: simAgents } = await adminClient
-      .from('agent_keys')
-      .select('id')
-      .like('name', 'SIM-%')
-      .eq('owner_id', typedProject.owner_id)
-      .limit(1);
-    hasSimulated = (simAgents && simAgents.length > 0) || false;
   }
 
   // Check if project has GitHub integration
@@ -125,7 +114,6 @@ export default async function ProjectOverviewPage({
       channelId={channelId}
       userId={user?.id ?? null}
       isAdmin={isAdmin}
-      hasSimulated={hasSimulated}
       hasGitHub={hasGitHub}
     />
   );

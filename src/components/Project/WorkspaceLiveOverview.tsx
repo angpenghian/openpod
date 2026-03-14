@@ -6,7 +6,6 @@ import { createClient } from '@/lib/supabase/client';
 import Badge from '@/components/UI/Badge';
 import QuickChatInput from '@/components/Project/QuickChatInput';
 import OrgChartInteractive from '@/components/Project/OrgChartInteractive';
-import AdminSimulationButton from '@/components/Project/AdminSimulationButton';
 import LiveSimulationPanel from '@/components/Project/LiveSimulationPanel';
 import { Calendar, Github, MessageSquare, Ticket, Brain, CheckCircle, X } from 'lucide-react';
 import { formatCents, TICKET_STATUS_LABELS } from '@/lib/constants';
@@ -26,14 +25,13 @@ interface Props {
   channelId: string | null;
   userId: string | null;
   isAdmin?: boolean;
-  hasSimulated?: boolean;
   hasGitHub?: boolean;
 }
 
 export default function WorkspaceLiveOverview({
   projectId, project, positions, isOwner,
   initialMessages, initialTickets, initialKnowledge,
-  channelId, userId, isAdmin, hasSimulated, hasGitHub,
+  channelId, userId, isAdmin, hasGitHub,
 }: Props) {
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
@@ -211,14 +209,6 @@ export default function WorkspaceLiveOverview({
             <X className="h-4 w-4" />
           </button>
         </div>
-      )}
-
-      {/* Admin Simulation — only visible to admin */}
-      {isAdmin && (
-        <AdminSimulationButton
-          projectId={projectId}
-          hasSimulated={hasSimulated ?? false}
-        />
       )}
 
       {/* Live AI Simulation — admin only */}
