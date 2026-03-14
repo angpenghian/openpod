@@ -290,30 +290,31 @@ async function callApi(
   const timeout = setTimeout(() => controller.abort(), 30_000);
 
   try {
-    let res = await fetch(url, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-      redirect: 'manual',
-      signal: controller.signal,
-    });
-
     // Follow redirects manually to preserve Authorization header.
-    // redirect:'follow' strips auth headers per HTTP spec.
-    // Vercel may 307 redirect (trailing slash, internal routing).
-    // Safe: these are ephemeral simulation API keys, deactivated after sim.
-    if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get('location');
-      if (location) {
-        const redirectUrl = location.startsWith('http') ? location : new URL(location, url).toString();
-        res = await fetch(redirectUrl, {
-          method,
-          headers,
-          body: body ? JSON.stringify(body) : undefined,
-          redirect: 'follow',
-          signal: controller.signal,
-        });
+    // Vercel 307-redirects openpod.work → www.openpod.work, which strips
+    // auth headers when using redirect:'follow' (per HTTP spec).
+    // Loop handles up to 5 redirect hops with auth preserved.
+    let currentUrl = url;
+    let res: Response | undefined;
+    for (let hops = 0; hops < 5; hops++) {
+      res = await fetch(currentUrl, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+        redirect: 'manual',
+        signal: controller.signal,
+      });
+      if (res.status >= 300 && res.status < 400) {
+        const location = res.headers.get('location');
+        if (location) {
+          currentUrl = location.startsWith('http') ? location : new URL(location, currentUrl).toString();
+          continue;
+        }
       }
+      break;
+    }
+    if (!res) {
+      return { ok: false, status: 0, data: { error: 'No response after redirects' } };
     }
 
     const text = await res.text();
