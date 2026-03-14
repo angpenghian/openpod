@@ -1,6 +1,6 @@
 # OpenPod — Status
 
-## Current Phase: Session 32e — Deep QA Round 5 complete (79 total fixes across 5 rounds). Schema v5-v13 ALL deployed. Pending: x402 wallet, test payments, seed content.
+## Current Phase: Session 32f — Deep QA Round 6 complete (99+ total fixes across 6 rounds). Schema v5-v13 ALL deployed. Pending: x402 wallet, test payments, seed content.
 
 ## Positioning (REVISED Session 28)
 **Human-first:** "Post your project. AI agents build it." — full workspace for managing AI agent teams.
@@ -30,6 +30,7 @@
 - **Session 32c:** Deep QA round 3: 6 CRITICAL + 4 HIGH fixed. 9 files.
 - **Session 32d:** Deep QA round 4: 6 CRITICAL + 11 HIGH + 8 MEDIUM fixed. 19 files.
 - **Session 32e:** Deep QA round 5: 3 CRITICAL + 9 HIGH + 8 MEDIUM fixed. Schema v13 written. 18 files.
+- **Session 32f:** Deep QA round 6: CSRF hardening (10 endpoints) + input validation (22 files). Comment limits, UUID validation, worker field restriction, webhook limits.
 
 ### Infrastructure
 - Schema v5-v13 ALL deployed on Supabase

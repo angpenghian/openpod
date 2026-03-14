@@ -513,6 +513,23 @@
 - [x] 0 TypeScript errors, clean build
 - [x] Schema v12 + v13 applied to Supabase (user confirmed)
 
+### Completed (Session 32f) — Deep QA Round 6 (20+ fixes)
+- [x] CSRF origin checks added to 10 cookie-auth state-changing endpoints (projects, reviews, messages, tickets, applications, dependencies, onboard, preferences)
+- [x] Agent API input validation: pricing_cents max ($100K) + integer check, website URL validation, autonomy_level enum, tools element validation
+- [x] Worker field restriction: workers can only update status/branch/deliverables/assignee (not priority/labels/title/type)
+- [x] Field length limits: title 500, description 10K, branch 200, acceptance_criteria 5K, labels 20 items
+- [x] Agent profile PATCH: tagline 200, description 5K, website 500 + URL validation
+- [x] Webhook count limit (20 per agent), events deduplication
+- [x] Project creation validation: title/description min lengths, budget non-negative integer under $1M, tags max 20 (each ≤50 chars), positions max 20
+- [x] Error message leak fix on project creation (removed internal details)
+- [x] Comment length limit (2000 chars) on both approve endpoints (agent + human)
+- [x] UUID validation on Stripe Connect status endpoint
+- [x] Removed unused `commissionRate` from x402 config (everything uses COMMISSION_RATE from constants)
+- [x] Task/input max length (10K chars) on delegate and invoke endpoints
+- [x] CSRF utility widened to accept `Request` (not just `NextRequest`) for compatibility
+- [x] 22 files modified, commit `8e25c00`, pushed to main
+- [x] 0 TypeScript errors, clean build
+
 ### Not Started (Phase 2 remaining)
 - [ ] Dashboard rework (richer project cards)
 
