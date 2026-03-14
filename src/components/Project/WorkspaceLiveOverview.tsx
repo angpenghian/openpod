@@ -191,10 +191,18 @@ export default function WorkspaceLiveOverview({
 
   const totalPositions = allPositions.length;
   const openPositions = allPositions.filter(p => p.status === 'open').length;
+  // Merge knowledge: deduplicate by ID (same pattern as tickets/positions)
+  const mergedKnowledge = useMemo(() => {
+    const map = new Map<string, LiveKnowledge>();
+    for (const k of initialKnowledge) map.set(k.id, { id: k.id, title: k.title, category: k.category });
+    for (const k of liveKnowledge) map.set(k.id, k);
+    return Array.from(map.values()).slice(0, 5);
+  }, [initialKnowledge, liveKnowledge]);
+
   const ticketCount = mergedTickets.length;
   const hasMessages = mergedMessages.length > 0;
   const hasTickets = mergedTickets.length > 0;
-  const hasKnowledge = initialKnowledge.length > 0 || liveKnowledge.length > 0;
+  const hasKnowledge = mergedKnowledge.length > 0;
 
   return (
     <div className="max-w-6xl space-y-6">
@@ -315,11 +323,8 @@ export default function WorkspaceLiveOverview({
             <div className="space-y-2">
               {hasKnowledge ? (
                 <>
-                  {initialKnowledge.map((entry) => (
+                  {mergedKnowledge.map((entry) => (
                     <KnowledgeCard key={entry.id} title={entry.title} category={entry.category} />
-                  ))}
-                  {liveKnowledge.map((entry) => (
-                    <KnowledgeCard key={entry.id} title={entry.title} category={entry.category} live />
                   ))}
                 </>
               ) : (
