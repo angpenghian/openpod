@@ -46,13 +46,14 @@ export async function POST(request: NextRequest) {
       const amountTotal = obj.amount_total as number | undefined;
       const paymentStatus = obj.payment_status as string | undefined;
       if (projectId && amountTotal && paymentStatus === 'paid') {
-        // Atomic escrow increment (prevents race conditions)
+        // C3: Atomic escrow increment — THROW on failure so Stripe retries
         const { error: escrowError } = await admin.rpc('increment_escrow', {
           p_project_id: projectId,
           p_amount: amountTotal,
         });
         if (escrowError) {
           console.error('Failed to increment escrow:', escrowError);
+          throw new Error(`Escrow increment failed: ${escrowError.message}`);
         }
       }
     } else if (eventType === 'account.updated') {
@@ -60,10 +61,17 @@ export async function POST(request: NextRequest) {
       const detailsSubmitted = obj.details_submitted as boolean | undefined;
       const chargesEnabled = obj.charges_enabled as boolean | undefined;
       const payoutsEnabled = obj.payouts_enabled as boolean | undefined;
-      if (accountId && detailsSubmitted && chargesEnabled && payoutsEnabled) {
-        await admin.from('agent_registry').update({
-          stripe_onboarded: true,
-        }).eq('stripe_account_id', accountId);
+      if (accountId) {
+        if (detailsSubmitted && chargesEnabled && payoutsEnabled) {
+          await admin.from('agent_registry').update({
+            stripe_onboarded: true,
+          }).eq('stripe_account_id', accountId);
+        } else if (chargesEnabled === false || payoutsEnabled === false) {
+          // H8: Revoke onboarded status if account is suspended/deauthorized
+          await admin.from('agent_registry').update({
+            stripe_onboarded: false,
+          }).eq('stripe_account_id', accountId);
+        }
       }
     } else if (eventType === 'transfer.reversed') {
       const metadata = obj.metadata as Record<string, string> | undefined;

@@ -5,6 +5,7 @@ import { fireWebhooks } from '@/lib/webhooks';
 import { notifyDeliverableApproved } from '@/lib/email';
 import { COMMISSION_RATE } from '@/lib/constants';
 import { settleStripeTransfer } from '@/lib/stripe';
+import { checkCsrfOrigin } from '@/lib/csrf';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -14,6 +15,10 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ projectId: string; ticketId: string }> }
 ) {
+  // H7: CSRF origin check
+  const csrfError = checkCsrfOrigin(request);
+  if (csrfError) return csrfError;
+
   const { projectId, ticketId } = await params;
 
   if (!UUID_REGEX.test(projectId) || !UUID_REGEX.test(ticketId)) {
@@ -102,17 +107,25 @@ export async function POST(
     }
     const commissionCents = Math.round(payoutCents * COMMISSION_RATE);
 
-    // H2: Update ticket and check result — do NOT proceed with money ops if update fails
-    const { error: updateError } = await admin.from('tickets').update({
+    // C1+H5: Block approval of rejected tickets that haven't been reworked
+    if (ticket.approval_status === 'rejected') {
+      return NextResponse.json(
+        { error: 'Ticket was rejected. Agent must rework (move to in_progress then back to in_review) before re-approval.' },
+        { status: 400 }
+      );
+    }
+
+    // C1: Atomic double-approval guard — WHERE neq prevents TOCTOU race
+    const { data: updateResult, error: updateError } = await admin.from('tickets').update({
       status: 'done',
       approval_status: 'approved',
       payout_cents: payoutCents,
       approved_at: now,
       approved_by: user.id,
-    }).eq('id', ticketId);
+    }).eq('id', ticketId).neq('approval_status', 'approved').select('id');
 
-    if (updateError) {
-      return NextResponse.json({ error: 'Failed to update ticket' }, { status: 500 });
+    if (updateError || !updateResult?.length) {
+      return NextResponse.json({ error: 'Ticket already approved or concurrent conflict' }, { status: 409 });
     }
 
     // Create transaction record (gross amount — matches agent API endpoint)

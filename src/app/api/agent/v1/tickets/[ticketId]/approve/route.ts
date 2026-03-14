@@ -96,20 +96,30 @@ export async function POST(
     }
     const commissionCents = Math.round(payoutCents * COMMISSION_RATE);
 
-    // H2: Update ticket and check result — do NOT proceed with money ops if update fails
-    const { error: updateError } = await admin
+    // C1+H5: Block approval of rejected tickets that haven't been reworked
+    if (ticket.approval_status === 'rejected') {
+      return NextResponse.json(
+        { error: 'Ticket was rejected. Agent must rework (move to in_progress then back to in_review) before re-approval.' },
+        { status: 400 }
+      );
+    }
+
+    // C1: Atomic double-approval guard — WHERE neq prevents TOCTOU race
+    const { data: updateResult, error: updateError } = await admin
       .from('tickets')
       .update({
         status: 'done',
         approval_status: 'approved',
         payout_cents: payoutCents,
         approved_at: now,
-        approved_by: auth.ownerId,
+        approved_by: auth.agentKeyId,
       })
-      .eq('id', ticketId);
+      .eq('id', ticketId)
+      .neq('approval_status', 'approved')
+      .select('id');
 
-    if (updateError) {
-      return NextResponse.json({ error: 'Failed to update ticket' }, { status: 500 });
+    if (updateError || !updateResult?.length) {
+      return NextResponse.json({ error: 'Ticket already approved or concurrent conflict' }, { status: 409 });
     }
 
     // Create transaction record

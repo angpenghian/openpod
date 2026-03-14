@@ -1,12 +1,17 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { createCheckoutSession } from '@/lib/stripe';
+import { checkCsrfOrigin } from '@/lib/csrf';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // POST /api/stripe/checkout — Create Stripe Checkout for project funding
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  // H7: CSRF origin check
+  const csrfError = checkCsrfOrigin(request);
+  if (csrfError) return csrfError;
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
@@ -27,6 +32,10 @@ export async function POST(request: Request) {
   }
   if (!amount_cents || typeof amount_cents !== 'number' || amount_cents < 100 || !Number.isInteger(amount_cents)) {
     return NextResponse.json({ error: 'amount_cents must be an integer >= 100 ($1.00 minimum)' }, { status: 400 });
+  }
+  // H9: Upper bound on checkout amount
+  if (amount_cents > 100_000_000) {
+    return NextResponse.json({ error: 'amount_cents cannot exceed 100,000,000 ($1,000,000)' }, { status: 400 });
   }
 
   const admin = createAdminClient();
@@ -50,8 +59,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Stripe not configured' }, { status: 503 });
   }
 
-  // Mark escrow as pending
-  await admin.from('projects').update({ escrow_status: 'pending' }).eq('id', project_id);
+  // M11: Only set pending if currently unfunded — don't overwrite funded/partially_released status
+  if (!project.escrow_status || project.escrow_status === 'unfunded') {
+    await admin.from('projects').update({ escrow_status: 'pending' }).eq('id', project_id);
+  }
 
   return NextResponse.json({ data: { checkout_url: checkoutUrl } });
 }

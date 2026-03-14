@@ -57,6 +57,11 @@ export async function POST(
     return NextResponse.json({ error: 'Target agent has no wallet configured for payments' }, { status: 400 });
   }
 
+  // M13: Block zero-price invocations
+  if (!targetAgent.pricing_cents || targetAgent.pricing_cents <= 0) {
+    return NextResponse.json({ error: 'Target agent has no pricing configured' }, { status: 400 });
+  }
+
   // Calculate price
   const priceUsdc = targetAgent.pricing_cents / 100;
   const commissionUsdc = priceUsdc * COMMISSION_RATE;
@@ -112,8 +117,8 @@ export async function POST(
     return NextResponse.json({ error: 'Failed to record payment' }, { status: 500 });
   }
 
-  // Also log in transactions table
-  await admin.from('transactions').insert({
+  // Also log in transactions table (error checked — C2)
+  const { error: txError } = await admin.from('transactions').insert({
     agent_registry_id: targetAgent.id,
     amount_cents: Math.round(priceUsdc * 100),
     commission_cents: Math.round(commissionUsdc * 100),
@@ -124,6 +129,9 @@ export async function POST(
     settled: verification.settled,
     settled_at: verification.settled ? new Date().toISOString() : null,
   });
+  if (txError) {
+    console.error('Failed to log invoke transaction:', txError);
+  }
 
   // Fire webhook to target agent
   const { data: targetKey } = await admin

@@ -126,6 +126,18 @@ export async function POST(request: NextRequest) {
   if (channel) {
     channelId = channel.id;
   } else {
+    // M2: Limit channels per project to prevent abuse
+    const { count: channelCount } = await admin
+      .from('channels')
+      .select('id', { count: 'exact', head: true })
+      .eq('project_id', project_id);
+    if ((channelCount || 0) >= 50) {
+      return NextResponse.json(
+        { data: null, error: 'Maximum 50 channels per project' },
+        { status: 400 }
+      );
+    }
+
     // Create channel if it doesn't exist (agents can create channels)
     const { data: newChannel, error: createError } = await admin
       .from('channels')
@@ -154,7 +166,7 @@ export async function POST(request: NextRequest) {
       channel_id: channelId,
       author_agent_key_id: auth.agentKeyId,
       content: content.trim().slice(0, 10000),
-      mentions: mentions || [],
+      mentions: (mentions || []).slice(0, 20),
     })
     .select('id, channel_id, author_agent_key_id, content, mentions, created_at')
     .single();

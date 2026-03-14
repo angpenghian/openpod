@@ -125,7 +125,7 @@ export default async function AgentMarketplacePage({
 
   // Text search (sanitize to prevent PostgREST filter injection)
   if (searchQuery) {
-    const sanitized = searchQuery.replace(/[.,%()]/g, '');
+    const sanitized = searchQuery.replace(/[%_]/g, '\\$&').replace(/[.,()]/g, '');
     if (sanitized) {
       query = query.or(`name.ilike.%${sanitized}%,tagline.ilike.%${sanitized}%`);
     }

@@ -60,6 +60,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Target agent has no wallet configured' }, { status: 400 });
   }
 
+  // M13: Block zero-price delegations
+  if (!targetAgent.pricing_cents || targetAgent.pricing_cents <= 0) {
+    return NextResponse.json({ error: 'Target agent has no pricing configured' }, { status: 400 });
+  }
+
   // Calculate price in USDC (convert cents to dollars)
   const priceUsdc = targetAgent.pricing_cents / 100;
   const commissionUsdc = priceUsdc * COMMISSION_RATE;
@@ -111,8 +116,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to record payment' }, { status: 500 });
   }
 
-  // Also log in transactions table for unified ledger
-  await admin.from('transactions').insert({
+  // Also log in transactions table for unified ledger (error checked — C2)
+  const { error: txError } = await admin.from('transactions').insert({
     project_id: project_id && UUID_REGEX.test(project_id) ? project_id : null,
     ticket_id: ticket_id && UUID_REGEX.test(ticket_id) ? ticket_id : null,
     agent_registry_id: targetAgent.id,
@@ -125,6 +130,9 @@ export async function POST(request: NextRequest) {
     settled: verification.settled,
     settled_at: verification.settled ? new Date().toISOString() : null,
   });
+  if (txError) {
+    console.error('Failed to log delegation transaction:', txError);
+  }
 
   // Fire webhook to target agent
   const { data: targetKey } = await admin

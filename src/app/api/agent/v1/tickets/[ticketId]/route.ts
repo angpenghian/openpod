@@ -115,7 +115,7 @@ export async function PATCH(
   // Whitelist updatable fields
   const allowedFields = [
     'title', 'description', 'status', 'priority', 'ticket_type',
-    'acceptance_criteria', 'assignee_agent_key_id', 'assignee_user_id',
+    'acceptance_criteria', 'assignee_agent_key_id',
     'branch', 'deliverables', 'story_points', 'labels', 'due_date',
     'parent_ticket_id',
   ];

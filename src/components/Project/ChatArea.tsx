@@ -116,7 +116,7 @@ export default function ChatArea({ channels, initialMessages, defaultChannelId, 
 
     const { data } = await supabase.from('channels').insert({
       project_id: projectId,
-      name: channelName.trim().toLowerCase().replace(/\s+/g, '-'),
+      name: channelName.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 50),
       is_default: false,
     }).select().single();
 

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { hashApiKey } from '@/lib/agent-auth';
+import { getRegistrationRateLimiter } from '@/lib/rate-limit';
 import crypto from 'crypto';
 
-// IP-based registration rate limiter (5 per hour per IP)
+// H3: In-memory fallback (only used when Redis is unavailable)
 const registerRateLimits = new Map<string, number[]>();
-const REGISTER_WINDOW_MS = 3600_000; // 1 hour
+const REGISTER_WINDOW_MS = 3600_000;
 const REGISTER_MAX = 5;
 
 function checkRegistrationLimit(ip: string): boolean {
@@ -20,11 +21,19 @@ function checkRegistrationLimit(ip: string): boolean {
 
 // POST /api/agent/v1/register — Agent self-registration (no auth required)
 export async function POST(request: NextRequest) {
-  // H4: Rate limit by IP — prefer x-real-ip (set by Vercel), fallback to x-forwarded-for
+  // H3: Rate limit by IP — use Redis when available, in-memory fallback
   const ip = request.headers.get('x-real-ip')
     || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
     || 'unknown';
-  if (!checkRegistrationLimit(ip)) {
+  const redisLimiter = getRegistrationRateLimiter();
+  let allowed: boolean;
+  if (redisLimiter) {
+    const result = await redisLimiter.limit(ip);
+    allowed = result.success;
+  } else {
+    allowed = checkRegistrationLimit(ip);
+  }
+  if (!allowed) {
     return NextResponse.json(
       { error: 'Too many registrations. Max 5 per hour.' },
       { status: 429, headers: { 'Retry-After': '3600' } }
@@ -58,11 +67,27 @@ export async function POST(request: NextRequest) {
   }
 
   // Validate required fields
-  if (!name || typeof name !== 'string' || name.trim().length < 2) {
-    return NextResponse.json({ error: 'name is required (min 2 chars)' }, { status: 400 });
+  if (!name || typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 100) {
+    return NextResponse.json({ error: 'name is required (2-100 chars)' }, { status: 400 });
   }
   if (!capabilities || !Array.isArray(capabilities) || capabilities.length === 0) {
     return NextResponse.json({ error: 'capabilities is required (non-empty array)' }, { status: 400 });
+  }
+  // M5: Limit array/string sizes to prevent storage exhaustion
+  if (capabilities.length > 20) {
+    return NextResponse.json({ error: 'Maximum 20 capabilities allowed' }, { status: 400 });
+  }
+  if (capabilities.some((c: unknown) => typeof c !== 'string' || (c as string).length > 50)) {
+    return NextResponse.json({ error: 'Each capability must be a string under 50 chars' }, { status: 400 });
+  }
+  if (tools && Array.isArray(tools) && tools.length > 20) {
+    return NextResponse.json({ error: 'Maximum 20 tools allowed' }, { status: 400 });
+  }
+  if (description && typeof description === 'string' && description.length > 5000) {
+    return NextResponse.json({ error: 'Description must be under 5000 chars' }, { status: 400 });
+  }
+  if (tagline && typeof tagline === 'string' && tagline.length > 200) {
+    return NextResponse.json({ error: 'Tagline must be under 200 chars' }, { status: 400 });
   }
   if (!pricing_type || !['per_task', 'hourly', 'monthly'].includes(pricing_type)) {
     return NextResponse.json({ error: 'pricing_type must be per_task, hourly, or monthly' }, { status: 400 });

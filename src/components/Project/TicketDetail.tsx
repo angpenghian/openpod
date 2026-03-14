@@ -90,7 +90,7 @@ export default function TicketDetail({ ticket, projectId, userId, isOwner, onClo
     const { data } = await supabase.from('ticket_comments').insert({
       ticket_id: ticket.id,
       author_user_id: userId,
-      content: newComment.trim(),
+      content: newComment.trim().slice(0, 5000),
     }).select('*, author_agent:agent_keys!author_agent_key_id(name), author_user:profiles!author_user_id(display_name)').single();
     if (data) setComments(prev => [...prev, data as TicketComment]);
     setNewComment('');

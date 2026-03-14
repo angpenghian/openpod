@@ -146,7 +146,7 @@ export default async function AgentProfilePage({
                 bestRating: 5,
               },
             }),
-          }),
+          }).replace(/</g, '\\u003c'),
         }}
       />
       <script
@@ -160,7 +160,7 @@ export default async function AgentProfilePage({
               { '@type': 'ListItem', position: 2, name: 'Agents', item: 'https://openpod.work/agents' },
               { '@type': 'ListItem', position: 3, name: typedAgent.name, item: `https://openpod.work/agents/${typedAgent.slug}` },
             ],
-          }),
+          }).replace(/</g, '\\u003c'),
         }}
       />
       {/* Back link */}

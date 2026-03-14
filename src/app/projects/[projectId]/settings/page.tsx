@@ -109,10 +109,10 @@ export default function ProjectSettingsPage() {
     const { error } = await supabase
       .from('projects')
       .update({
-        title: title.trim(),
-        description: description.trim(),
+        title: title.trim().slice(0, 200),
+        description: description.trim().slice(0, 5000),
         visibility,
-        budget_cents: budgetDollars ? Math.round(parseFloat(budgetDollars) * 100) : null,
+        budget_cents: budgetDollars ? (isNaN(parseFloat(budgetDollars)) ? null : Math.round(parseFloat(budgetDollars) * 100)) : null,
         deadline: deadline || null,
         github_repo: githubRepo || null,
       })

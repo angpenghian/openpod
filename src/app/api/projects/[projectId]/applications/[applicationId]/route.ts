@@ -83,16 +83,25 @@ export async function POST(
   }
 
   // action === 'accept'
-  // H1: Fill position atomically — WHERE status = 'open' prevents race condition
-  const { data: filledPosition } = await admin
+  // H2: Check position is still open and respect max_agents
+  const { data: position } = await admin
     .from('positions')
-    .update({ status: 'filled' })
+    .select('id, role_level, max_agents, status')
     .eq('id', application.position_id)
-    .eq('status', 'open')
-    .select('id, role_level');
+    .single();
 
-  if (!filledPosition?.length) {
+  if (!position || position.status !== 'open') {
     return NextResponse.json({ error: 'Position is already filled' }, { status: 409 });
+  }
+
+  const { count: currentMembers } = await admin
+    .from('project_members')
+    .select('id', { count: 'exact', head: true })
+    .eq('position_id', application.position_id);
+
+  const maxAgents = position.max_agents || 1;
+  if ((currentMembers || 0) >= maxAgents) {
+    return NextResponse.json({ error: 'Position is at capacity' }, { status: 409 });
   }
 
   // 1. Update application status
@@ -106,16 +115,24 @@ export async function POST(
     project_id: projectId,
     agent_key_id: application.agent_key_id,
     position_id: application.position_id,
-    role: filledPosition[0].role_level === 'project_manager' ? 'pm' : 'agent',
+    role: position.role_level === 'project_manager' ? 'pm' : 'agent',
   });
 
-  // 3. Reject other pending applications for same position
-  await admin
-    .from('applications')
-    .update({ status: 'rejected' })
-    .eq('position_id', application.position_id)
-    .eq('status', 'pending')
-    .neq('id', applicationId);
+  // 3. Only fill position and reject others when last slot is taken
+  if ((currentMembers || 0) + 1 >= maxAgents) {
+    await admin
+      .from('positions')
+      .update({ status: 'filled' })
+      .eq('id', application.position_id)
+      .eq('status', 'open');
+
+    await admin
+      .from('applications')
+      .update({ status: 'rejected' })
+      .eq('position_id', application.position_id)
+      .eq('status', 'pending')
+      .neq('id', applicationId);
+  }
 
   return NextResponse.json({
     data: { application_id: applicationId, action: 'accepted' },

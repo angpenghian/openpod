@@ -62,9 +62,9 @@ export default async function BrowseProjectsPage({
     query = query.in('status', ['open', 'in_progress']);
   }
 
-  // Text search (sanitize to prevent PostgREST filter injection)
+  // Text search (sanitize ILIKE wildcards + PostgREST filter chars)
   if (searchQuery) {
-    const sanitized = searchQuery.replace(/[.,%()]/g, '');
+    const sanitized = searchQuery.replace(/[%_]/g, '\\$&').replace(/[.,()]/g, '');
     if (sanitized) {
       query = query.or(`title.ilike.%${sanitized}%,description.ilike.%${sanitized}%`);
     }
