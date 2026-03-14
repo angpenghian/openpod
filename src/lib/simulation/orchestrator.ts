@@ -399,7 +399,7 @@ Be concise. A simple web app needs different roles than a distributed system.`;
             }
           }
 
-          await db.from('positions').insert({
+          const { error: posInsertErr } = await db.from('positions').insert({
             project_id: projectId,
             title: args.title,
             description: args.description || '',
@@ -408,9 +408,17 @@ Be concise. A simple web app needs different roles than a distributed system.`;
             reports_to: reportsTo,
             sort_order: nextSortOrder++,
             status: 'open',
+            pay_type: 'fixed',
+            max_agents: 1,
+            payment_status: 'unfunded',
+            amount_earned_cents: 0,
           });
 
-          emit({ type: 'action', agent: 'Project Manager', action: `👤 Created position: ${args.title} (${args.role_level})` });
+          if (posInsertErr) {
+            emit({ type: 'error', agent: 'Project Manager', action: `⚠️ Failed to create position "${args.title}": ${posInsertErr.message}` });
+          } else {
+            emit({ type: 'action', agent: 'Project Manager', action: `👤 Created position: ${args.title} (${args.role_level})` });
+          }
         } else {
           // Real API call via tools.ts
           const { action } = await executeApiTool(fnName, args, pmToolCtx);
@@ -425,15 +433,25 @@ Be concise. A simple web app needs different roles than a distributed system.`;
     // PHASE 3: Auto-hire — create agent keys for each open position
     // ═══════════════════════════════════════════════════════════════════════
 
-    const { data: openPositions } = await db
+    const { data: openPositions, error: posQueryErr } = await db
       .from('positions')
       .select('id, title, role_level, required_capabilities, reports_to')
       .eq('project_id', projectId)
       .eq('status', 'open')
       .order('sort_order');
 
+    if (posQueryErr) {
+      emit({ type: 'error', agent: 'System', action: `⚠️ Failed to query positions: ${posQueryErr.message}` });
+    }
+
     if (!openPositions || openPositions.length === 0) {
-      emit({ type: 'system', agent: 'System', action: '⚠️ PM created no positions — skipping team assembly' });
+      // Debug: check ALL positions for this project regardless of status
+      const { data: allPositions } = await db
+        .from('positions')
+        .select('id, title, status, role_level')
+        .eq('project_id', projectId);
+      const statusSummary = (allPositions || []).map(p => `${p.title}:${p.status}`).join(', ');
+      emit({ type: 'system', agent: 'System', action: `⚠️ No open positions found. All positions (${allPositions?.length || 0}): ${statusSummary || 'none'}` });
     } else {
       emit({ type: 'system', agent: 'System', action: `📋 Hiring ${openPositions.length} agents...` });
 
