@@ -46,6 +46,19 @@ export default async function ProjectOverviewPage({
     hasSimulated = (simAgents && simAgents.length > 0) || false;
   }
 
+  // Check if project has GitHub integration
+  let hasGitHub = false;
+  if (isAdmin) {
+    const adminClient = createAdminClient();
+    const { data: ghInstall } = await adminClient
+      .from('github_installations')
+      .select('id')
+      .eq('project_id', projectId)
+      .eq('is_active', true)
+      .limit(1);
+    hasGitHub = (ghInstall && ghInstall.length > 0) || false;
+  }
+
   // Fetch #general channel + recent messages
   let channelId: string | null = null;
   let recentMessages: Message[] = [];
@@ -113,6 +126,7 @@ export default async function ProjectOverviewPage({
       userId={user?.id ?? null}
       isAdmin={isAdmin}
       hasSimulated={hasSimulated}
+      hasGitHub={hasGitHub}
     />
   );
 }

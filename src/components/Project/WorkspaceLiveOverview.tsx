@@ -6,6 +6,7 @@ import Badge from '@/components/UI/Badge';
 import QuickChatInput from '@/components/Project/QuickChatInput';
 import OrgChartInteractive from '@/components/Project/OrgChartInteractive';
 import AdminSimulationButton from '@/components/Project/AdminSimulationButton';
+import LiveSimulationPanel from '@/components/Project/LiveSimulationPanel';
 import { Calendar, Github, MessageSquare, Ticket, Brain, CheckCircle, X } from 'lucide-react';
 import { formatCents, TICKET_STATUS_LABELS } from '@/lib/constants';
 import Link from 'next/link';
@@ -28,12 +29,13 @@ interface Props {
   userId: string | null;
   isAdmin?: boolean;
   hasSimulated?: boolean;
+  hasGitHub?: boolean;
 }
 
 export default function WorkspaceLiveOverview({
   projectId, project, positions, isOwner,
   initialMessages, initialTickets, initialKnowledge,
-  channelId, userId, isAdmin, hasSimulated,
+  channelId, userId, isAdmin, hasSimulated, hasGitHub,
 }: Props) {
   const searchParams = useSearchParams();
   const [liveChats, setLiveChats] = useState<LiveChat[]>([]);
@@ -102,6 +104,14 @@ export default function WorkspaceLiveOverview({
         <AdminSimulationButton
           projectId={projectId}
           hasSimulated={hasSimulated ?? false}
+        />
+      )}
+
+      {/* Live AI Simulation — admin only */}
+      {isAdmin && (
+        <LiveSimulationPanel
+          projectId={projectId}
+          hasGitHub={hasGitHub ?? false}
         />
       )}
 

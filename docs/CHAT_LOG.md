@@ -1,5 +1,80 @@
 # OpenPod — Chat Log
 
+## Session 33 (2026-03-14) — FundProjectButton + SetupPayoutsButton + Admin Simulation + Deep QA Rounds 8-10
+
+### What Happened
+- Built 3 missing features: FundProjectButton, SetupPayoutsButton, AdminSimulationButton
+- Ran 3 more deep QA rounds (8-10) with parallel audit agents
+- 25 additional fixes applied. 133+ total fixes across 10 rounds.
+- User ran SQL (`UPDATE profiles SET role = 'admin'`) and set `ADMIN_USER_ID` env var on Vercel
+- Committed `b828423` (21 files, 962 insertions), pushed to main → Vercel auto-deploy
+
+### Features Built (3)
+
+**1. FundProjectButton** (`src/components/Project/FundProjectButton.tsx`)
+- Dollar input → cents conversion, $1-$1M validation
+- Calls `POST /api/stripe/checkout` → redirects to Stripe Checkout
+- Shows current escrow balance + status badge (funded/pending/released/refunded)
+- Integrated on payments page (`src/app/projects/[projectId]/payments/page.tsx`)
+
+**2. SetupPayoutsButton** (`src/components/Project/SetupPayoutsButton.tsx`)
+- Fetches agent_registry entries by builder_id (client-side Supabase)
+- Per-agent row: not_started → "Set Up Payouts", pending → "Check Status", onboarded → "Payouts Active"
+- Returns null if user has no agents (section hidden)
+- Integrated on profile page (`src/app/profile/page.tsx`)
+
+**3. Admin Simulation** (`src/app/api/projects/[projectId]/simulate/route.ts` + `AdminSimulationButton.tsx`)
+- Scripted 12-step demo seeding (no OpenAI API, no LLM calls)
+- Dual admin guard: `process.env.ADMIN_USER_ID` + `profile.role === 'admin'`
+- Creates: 8 SIM-prefixed agents, PM applies+joins, org chart (leads+workers), 6 tickets, chat messages, architecture knowledge entry, project → in_progress
+- Comprehensive cleanup on failure (dependency-order deletion)
+- AdminSimulationButton: warning-styled card on project overview, admin-only, hasSimulated guard
+
+### Deep QA Round 8 (14 fixes)
+1. CSRF on `auth/logout` + `github/verify-pr`
+2. SetupPayoutsButton unknown status handling + query error handling
+3. hasSimulated uses admin client (bypasses RLS)
+4. parseFloat/parseInt NaN guards in agents route
+5. `payout_cents || 0` → `?? 0` in 3 locations (agent approve, human approve, TicketDetail)
+6. UUID validation on messages route
+7. `context_window ?? null` in register route
+8. Tags validation on project creation
+9. Budget upper bound ($1M) on project creation
+10. SSRF parseInt NaN guard in webhooks
+
+### Deep QA Round 9 (8 fixes)
+1. github/connect: replaced manual CSRF with `checkCsrfOrigin`
+2. FundProjectButton: null check on `data.data.checkout_url`
+3. Balance route: 10k→1k query limits
+4. Human approve: error check on transaction insert
+5. Simulate route: comprehensive cleanup (deletes all orphaned records)
+6. Simulate route: lead position null checks (throw if null)
+7. Simulate route: reports_to uses direct `.id`
+8. Simulate route: lead loop guard removed (redundant with null checks)
+
+### Deep QA Round 10 (3 fixes)
+1. Position description size limit (5000 chars) in agent project creation
+2. Position title size limit (200 chars) in agent project creation
+
+### Files Changed (21)
+**New (4):** FundProjectButton.tsx, SetupPayoutsButton.tsx, simulate/route.ts, AdminSimulationButton.tsx
+**Modified (17):** payments/page.tsx, profile/page.tsx, project overview page.tsx, WorkspaceLiveOverview.tsx, auth/logout, github/verify-pr, github/connect, agents/route.ts, agent approve, human approve, messages/route.ts, projects/route.ts, register/route.ts, balance/route.ts, agent projects/route.ts, webhooks.ts, TicketDetail.tsx
+
+### Build
+- 0 TypeScript errors, clean `next build`
+- Commit `b828423`, pushed to main → Vercel auto-deploy
+
+### User Actions Completed
+- `UPDATE profiles SET role = 'admin' WHERE id = '<uuid>'` — ran in Supabase SQL Editor
+- `ADMIN_USER_ID` env var — set on Vercel
+
+### Running Total
+- **Sessions 32-33:** 133+ total fixes across 10 rounds
+- All CRITICAL issues resolved. Diminishing returns — Round 10 found only architecture-level opinions.
+- **All infrastructure live:** Stripe Connect, Resend, Redis, GitHub App, Schema v5-v13, Admin Simulation
+
+---
+
 ## Session 32g (2026-03-14) — Deep QA Round 7 (Final 9 fixes)
 
 ### What Happened
@@ -34,9 +109,13 @@
 - 0 TypeScript errors, clean `next build`
 - Commit `a3c3661`, pushed to main → Vercel auto-deploy
 
+### Infrastructure Update
+- **Resend unblocked** — user created API key (`re_` prefix, full access, all domains), added `RESEND_API_KEY` to Vercel env vars. Email notifications now live (3 templates: application received, ticket completed, deliverable approved).
+
 ### Running Total
 - **Sessions 32-32g:** 108+ total fixes across 7 rounds
 - All CRITICAL issues resolved. Remaining issues are LOW/informational only.
+- **All infrastructure live:** Stripe Connect, Resend emails, Upstash Redis, GitHub App, Supabase schema v5-v13
 
 ---
 

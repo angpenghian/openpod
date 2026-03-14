@@ -349,7 +349,7 @@
 - [x] Full QA + security audit (HTML injection, IDOR, URL validation, IPv6 SSRF, payout validation)
 - [x] Schema v9 deployed (webhook_deliveries, ticket_dependencies, notification_preferences)
 - [x] Upstash Redis configured (us-east-1)
-- [x] Resend domain added (openpod.work, pending reactivation)
+- [x] Resend domain added (openpod.work) — **LIVE** (API key on Vercel, S32g)
 - [x] 24 files changed (10 new, 14 modified), 2169 insertions
 - [x] 0 TypeScript errors
 - [x] Commit `4598416` pushed to main
@@ -541,6 +541,21 @@
 - [x] 7 files modified, commit `a3c3661`, pushed to main
 - [x] 0 TypeScript errors, clean build
 
+### Completed (Session 33) — FundProjectButton + SetupPayoutsButton + Admin Simulation + Deep QA Rounds 8-10
+- [x] **FundProjectButton** (`src/components/Project/FundProjectButton.tsx`): Dollar input → cents, $1-$1M validation, Stripe Checkout redirect, escrow balance + status badge
+- [x] **SetupPayoutsButton** (`src/components/Project/SetupPayoutsButton.tsx`): Agent payout setup on profile page, per-agent onboarding status (not_started/pending/onboarded), query error handling, unknown status mapping
+- [x] **Admin Simulation API** (`src/app/api/projects/[projectId]/simulate/route.ts`): Scripted 12-step demo seeding (no OpenAI). Dual admin guard (ADMIN_USER_ID env + profile.role). 8 SIM-prefixed agents, org chart, 6 tickets, chat, knowledge. Comprehensive cleanup on failure. Lead position null checks.
+- [x] **AdminSimulationButton** (`src/components/Project/AdminSimulationButton.tsx`): Warning-styled card, single-click simulation, action log, hasSimulated guard
+- [x] Integration: FundProjectButton on payments page, SetupPayoutsButton on profile page, AdminSimulationButton on project overview (admin-only)
+- [x] WorkspaceLiveOverview: isAdmin + hasSimulated props, AdminSimulationButton rendering
+- [x] Project overview page: admin role check (profiles.role), hasSimulated query (admin client bypasses RLS)
+- [x] **Deep QA Round 8** (14 fixes): CSRF on auth/logout + github/verify-pr, SetupPayoutsButton unknown status + query error, hasSimulated admin client, parseFloat/parseInt NaN guards (agents route), payout_cents ?? 0 (3 locations), UUID validation (messages), context_window ?? null (register), tags validation + budget upper bound (project creation), SSRF parseInt NaN (webhooks)
+- [x] **Deep QA Round 9** (8 fixes): github/connect CSRF standardized, FundProjectButton null check, balance route 10k→1k limits, human approve tx error check, simulate route comprehensive cleanup + lead position null checks + reports_to direct .id
+- [x] **Deep QA Round 10** (3 fixes): Position description 5000 char limit, position title 200 char limit (agent project creation)
+- [x] Commit `b828423` — 21 files, 962 insertions. Pushed to main.
+- [x] 0 TypeScript errors, clean build
+- [x] **133+ total fixes across 10 rounds. All CRITICAL resolved.**
+
 ### Not Started (Phase 2 remaining)
 - [ ] Dashboard rework (richer project cards)
 
@@ -557,7 +572,7 @@
 - [ ] **Pending:** Create platform wallet + add to Vercel
 - [ ] **Pending:** Complete Stripe Go Live checklist (identity verification)
 - [ ] **Pending:** Test both payment flows end-to-end
-- [ ] **Pending:** UI components (FundProjectButton, SetupPayoutsButton)
+- [x] ~~**Pending:** UI components (FundProjectButton, SetupPayoutsButton)~~ **BUILT (Session 33)**
 
 ## Phase 4: Growth
 
