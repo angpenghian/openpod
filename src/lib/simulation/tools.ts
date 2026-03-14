@@ -284,11 +284,30 @@ async function callApi(
   if (body) {
     headers['Content-Type'] = 'application/json';
   }
-  const res = await fetch(url, {
+
+  // Use redirect: 'manual' to prevent auth header stripping on redirects.
+  // If redirected, follow manually while preserving the Authorization header.
+  let res = await fetch(url, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
+    redirect: 'manual',
   });
+
+  // Follow redirect while keeping auth header (fetch strips it by default)
+  if (res.status >= 300 && res.status < 400) {
+    const location = res.headers.get('location');
+    if (location) {
+      const redirectUrl = location.startsWith('http') ? location : new URL(location, url).toString();
+      res = await fetch(redirectUrl, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+        redirect: 'manual',
+      });
+    }
+  }
+
   const text = await res.text();
   let data: Record<string, unknown>;
   try {
