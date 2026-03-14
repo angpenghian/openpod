@@ -16,7 +16,7 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 import { createAdminClient } from '@/lib/supabase/admin';
 import { hashApiKey } from '@/lib/agent-auth';
 import { OPENPOD_TOOLS, GITHUB_TOOLS, executeApiTool, type ToolContext } from './tools';
-import { createBranch as ghCreateBranch } from './github-tools';
+import { createBranch as ghCreateBranch, readFile as ghReadFile, writeFile as ghWriteFile } from './github-tools';
 
 const MODEL = 'gpt-4o-mini';
 
@@ -358,6 +358,76 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
         delete args.labels;
         const { action } = await executeApiTool(toolCall.function.name, args, pmToolCtx);
         emit({ type: 'action', agent: 'Project Manager', action });
+      }
+    }
+
+    if (isAborted()) return;
+
+    // Step 3: PM generates a proper README.md via LLM + GitHub API
+    if (validatedGitHub) {
+      emit({ type: 'thinking', agent: 'Project Manager', action: '⏳ Writing README.md...' });
+
+      // Read existing README if any
+      const defaultBr = validatedGitHub.defaultBranch || 'main';
+      let existingReadme = '';
+      const readResult = await ghReadFile(validatedGitHub.token, validatedGitHub.owner, validatedGitHub.repo, 'README.md', defaultBr);
+      if (!('error' in readResult)) {
+        existingReadme = readResult.content;
+      }
+
+      // Collect ticket titles from what PM just created
+      const { data: createdTickets } = await db.from('tickets')
+        .select('title, description, priority')
+        .eq('project_id', projectId).order('created_at');
+      const ticketList = (createdTickets || []).map(t => `- **${t.title}** (${t.priority}): ${(t.description || '').slice(0, 80)}`).join('\n');
+
+      const teamList = teamStructure.map(t => `- **${t.title}** (${t.role_level})`).join('\n');
+
+      const readmePrompt = existingReadme
+        ? `You are updating an existing README.md for the project "${project.title}". Here is the current README:\n\n---\n${existingReadme.slice(0, 3000)}\n---\n\nUpdate it to reflect the current project state. Keep any existing useful content but add/update: project overview, features being built, team structure, and tech stack. Make it look professional.`
+        : `You are writing a README.md for a new project "${project.title}".`;
+
+      const readmeResponse = await openai.chat.completions.create({
+        model: MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: `${readmePrompt}
+
+Project: ${project.description}
+
+## Team
+${teamList}
+
+## Features In Progress
+${ticketList}
+
+Write a professional, well-structured README.md with:
+1. Project title + description (compelling, not generic)
+2. Features section (based on the tickets above)
+3. Tech stack (infer from the project description)
+4. Team/contributors section
+5. Getting started / setup instructions (reasonable defaults)
+6. License placeholder
+
+Output ONLY the raw markdown content. No code fences, no explanations.`,
+          },
+          { role: 'user', content: 'Write the README.md now. Output only the markdown.' },
+        ],
+        temperature: 0.7,
+      });
+
+      const readmeContent = readmeResponse.choices[0]?.message?.content?.trim();
+      if (readmeContent && readmeContent.length > 50) {
+        const writeResult = await ghWriteFile(
+          validatedGitHub.token, validatedGitHub.owner, validatedGitHub.repo,
+          'README.md', readmeContent, defaultBr, 'docs: Update README with project overview and team structure',
+        );
+        if ('error' in writeResult) {
+          emit({ type: 'error', agent: 'Project Manager', action: `⚠️ Failed to write README: ${writeResult.error.slice(0, 100)}` });
+        } else {
+          emit({ type: 'action', agent: 'Project Manager', action: '📝 Updated README.md with project overview' });
+        }
       }
     }
 
