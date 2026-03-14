@@ -445,6 +445,90 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
 
       if (isAborted()) return;
 
+      // Check if workers were created — if not, make a follow-up call
+      const { data: createdPositions } = await db
+        .from('positions')
+        .select('id, title, role_level')
+        .eq('project_id', projectId)
+        .neq('role_level', 'project_manager');
+
+      const hasWorkers = createdPositions?.some(p => p.role_level === 'worker');
+      const leadTitles = createdPositions?.filter(p => p.role_level === 'lead').map(p => p.title) || [];
+
+      if (!hasWorkers && leadTitles.length > 0) {
+        emit({ type: 'thinking', agent: 'Project Manager', action: '⏳ Creating worker positions...' });
+
+        const workerResponse = await openai.chat.completions.create({
+          model: MODEL,
+          messages: [
+            { role: 'system', content: `You are the Project Manager for "${project.title}". You already created these lead positions: ${leadTitles.join(', ')}.\n\nNow create 3-5 WORKER positions under those leads. Workers do the actual coding/design work.\nExamples: "Sr Frontend Developer" (reports_to_title: "Frontend Lead"), "Backend Engineer" (reports_to_title: "Backend Lead").\n\nEach worker MUST have role_level "worker" and reports_to_title matching an existing lead title exactly.\nCapabilities should be lowercase tech terms.` },
+            { role: 'user', content: `Create 3-5 worker positions. Available leads: ${leadTitles.join(', ')}. Every worker needs role_level "worker" and reports_to_title.` },
+          ],
+          tools: [createPositionTool],
+          tool_choice: 'required',
+          temperature: 0.7,
+        });
+
+        if (isAborted()) return;
+
+        const workerChoice = workerResponse.choices[0];
+        if (workerChoice.message.tool_calls) {
+          let nextSort = (createdPositions?.length || 0) + 1;
+          for (const toolCall of workerChoice.message.tool_calls) {
+            if (isAborted()) break;
+            if (toolCall.type !== 'function') continue;
+
+            const args = JSON.parse(toolCall.function.arguments);
+            // Force worker role_level
+            args.role_level = 'worker';
+
+            let reportsTo: string | null = pmPositionId;
+            if (args.reports_to_title && typeof args.reports_to_title === 'string') {
+              const { data: match } = await db
+                .from('positions')
+                .select('id')
+                .eq('project_id', projectId)
+                .ilike('title', args.reports_to_title)
+                .maybeSingle();
+              if (match) reportsTo = match.id;
+              else {
+                const { data: fuzzy } = await db
+                  .from('positions')
+                  .select('id')
+                  .eq('project_id', projectId)
+                  .ilike('title', `%${args.reports_to_title}%`)
+                  .limit(1)
+                  .maybeSingle();
+                if (fuzzy) reportsTo = fuzzy.id;
+              }
+            }
+
+            const { error: posInsertErr } = await db.from('positions').insert({
+              project_id: projectId,
+              title: args.title,
+              description: args.description || '',
+              required_capabilities: (args.required_capabilities || []).map((c: string) => c.toLowerCase()),
+              role_level: 'worker',
+              reports_to: reportsTo,
+              sort_order: nextSort++,
+              status: 'open',
+              pay_type: 'fixed',
+              max_agents: 1,
+              payment_status: 'unfunded',
+              amount_earned_cents: 0,
+            });
+
+            if (posInsertErr) {
+              emit({ type: 'error', agent: 'Project Manager', action: `⚠️ Failed to create worker "${args.title}": ${posInsertErr.message}` });
+            } else {
+              emit({ type: 'action', agent: 'Project Manager', action: `👤 Created position: ${args.title} (worker)` });
+            }
+          }
+        }
+      }
+
+      if (isAborted()) return;
+
       // Step 2: Create tickets, chat, knowledge (via real API)
       // IMPORTANT: Do NOT use labels on tickets to avoid capability mismatch issues
       emit({ type: 'thinking', agent: 'Project Manager', action: '⏳ Creating tickets and project plan...' });
@@ -693,25 +777,29 @@ IMPORTANT: When you see tickets from list_tickets, the "id:" field is the UUID y
       return;
     }
 
-    for (let round = 0; round < maxRounds; round++) {
+    for (let round = 1; round <= maxRounds; round++) {
       if (isAborted()) break;
 
-      const agent = workCycle[round % workCycle.length];
-      emit({ type: 'round', agent: agent.roleTitle, action: `⏳ Working (round ${round + 1}/${maxRounds})...`, round: round + 1 });
+      emit({ type: 'round', agent: 'System', action: `🔄 Round ${round}/${maxRounds} — ${workCycle.length} agents working`, round });
 
-      const roleDesc = agent.roleLevel === 'project_manager'
-        ? 'As PM: review completed work, coordinate the team, create new tickets for gaps, approve finished tickets (approve_ticket), track progress.'
-        : getRoleDescription(agent.roleTitle, agent.roleLevel);
+      for (const agent of workCycle) {
+        if (isAborted()) break;
 
-      const tools = getToolsForRole(agent.roleLevel, !!github);
+        emit({ type: 'thinking', agent: agent.roleTitle, action: `⏳ ${agent.roleTitle} working (round ${round})...` });
 
-      const hasGitHubNote = github
-        ? `\n\nYou have access to the GitHub repo (${github.owner}/${github.repo}). Use create_branch, write_file, create_pull_request.`
-        : '';
+        const roleDesc = agent.roleLevel === 'project_manager'
+          ? 'As PM: review completed work, coordinate the team, create new tickets for gaps, approve finished tickets (approve_ticket), track progress.'
+          : getRoleDescription(agent.roleTitle, agent.roleLevel);
 
-      await runAgentTurn(
-        agent,
-        `You are ${agent.roleTitle} working on "${project.title}".
+        const tools = getToolsForRole(agent.roleLevel, !!github);
+
+        const hasGitHubNote = github
+          ? `\n\nYou have access to the GitHub repo (${github.owner}/${github.repo}). Use create_branch, write_file, create_pull_request.`
+          : '';
+
+        await runAgentTurn(
+          agent,
+          `You are ${agent.roleTitle} working on "${project.title}".
 
 ## Your Role
 ${roleDesc}${hasGitHubNote}
@@ -727,12 +815,13 @@ ${roleDesc}${hasGitHubNote}
 ${github && (agent.roleLevel === 'worker' || agent.roleLevel === 'lead') ? `- GitHub: create_branch → write_file → create_pull_request` : ''}
 
 IMPORTANT: Actually DO work — don't just list tickets. Pick one up, work on it, update its status. Make real progress each turn.`,
-        'Call list_tickets first, then take action based on what you see. Make real progress.',
-        tools,
-        round + 1,
-      );
+          'Call list_tickets first, then take action based on what you see. Make real progress.',
+          tools,
+          round,
+        );
+      }
 
-      // Check if all tickets are done (but only if tickets exist)
+      // After each full round, check if all tickets are done
       const { data: totalTickets } = await db
         .from('tickets')
         .select('id')
