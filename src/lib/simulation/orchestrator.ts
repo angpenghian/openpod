@@ -16,6 +16,7 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 import { createAdminClient } from '@/lib/supabase/admin';
 import { hashApiKey } from '@/lib/agent-auth';
 import { OPENPOD_TOOLS, GITHUB_TOOLS, executeApiTool, type ToolContext } from './tools';
+import { createBranch as ghCreateBranch } from './github-tools';
 
 const MODEL = 'gpt-4o-mini';
 
@@ -30,6 +31,7 @@ export interface SimulationAgent {
   positionId: string;
   assignedTicketId?: string;    // orchestrator-assigned ticket UUID
   assignedTicketTitle?: string; // for display
+  branchName?: string;          // orchestrator-created git branch
 }
 
 export interface SimulationEvent {
@@ -92,12 +94,18 @@ function generateApiKey(): string {
   return 'openpod_sim_' + crypto.randomBytes(24).toString('base64url');
 }
 
-/** Get tools for a worker's coding turn — only GitHub + comment tools */
+/** Get tools for a worker's coding turn — only GitHub write + comment tools */
 function getWorkerTools(hasGitHub: boolean) {
   const tools = OPENPOD_TOOLS.filter(t =>
     t.type === 'function' && ['add_comment', 'post_message'].includes(t.function.name)
   );
-  if (hasGitHub) tools.push(...GITHUB_TOOLS);
+  if (hasGitHub) {
+    // Exclude create_branch — write_file creates branches implicitly via GitHub API.
+    // Also exclude read_file and get_repo_structure to keep the worker focused.
+    tools.push(...GITHUB_TOOLS.filter(t =>
+      t.type === 'function' && ['write_file', 'create_pull_request'].includes(t.function.name)
+    ));
+  }
   return tools;
 }
 
@@ -153,13 +161,21 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
           emit({ type: 'error', agent: 'System', action: `⚠️ GitHub App needs contents:write + pull_requests:write. Current: ${JSON.stringify(perms)}` });
         }
 
-        // Init empty repo
-        const refRes = await fetch(
-          `https://api.github.com/repos/${github.owner}/${github.repo}/git/ref/heads/${defaultBranch}`,
-          { headers: { Authorization: `Bearer ${github.token}`, Accept: 'application/vnd.github+json' } },
-        );
-        if (!refRes.ok && refRes.status === 404) {
-          emit({ type: 'system', agent: 'System', action: '📄 Initializing empty repo with README...' });
+        // Init empty repo — check BOTH size===0 AND ref existence
+        // GitHub returns 409 (not 404) for empty repos on git/ref endpoints
+        const repoIsEmpty = repoData.size === 0;
+        let refExists = false;
+        if (!repoIsEmpty) {
+          const refRes = await fetch(
+            `https://api.github.com/repos/${github.owner}/${github.repo}/git/ref/heads/${defaultBranch}`,
+            { headers: { Authorization: `Bearer ${github.token}`, Accept: 'application/vnd.github+json' } },
+          );
+          refExists = refRes.ok;
+          if (!refRes.ok) await refRes.text(); // consume body
+        }
+
+        if (repoIsEmpty || !refExists) {
+          emit({ type: 'system', agent: 'System', action: `📄 Initializing empty repo (size=${repoData.size}, refExists=${refExists})...` });
           const initRes = await fetch(
             `https://api.github.com/repos/${github.owner}/${github.repo}/contents/README.md`,
             {
@@ -172,13 +188,19 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
             },
           );
           if (!initRes.ok) {
-            emit({ type: 'error', agent: 'System', action: '⚠️ Failed to init repo — disabling GitHub' });
-            validatedGitHub = null;
+            const initErr = await initRes.text();
+            // If README already exists (409/422), repo is actually initialized — proceed
+            if (initRes.status === 409 || initRes.status === 422) {
+              emit({ type: 'system', agent: 'System', action: '✅ Repo already has content, proceeding' });
+            } else {
+              emit({ type: 'error', agent: 'System', action: `⚠️ Failed to init repo (${initRes.status}) — disabling GitHub` });
+              validatedGitHub = null;
+            }
           } else {
-            emit({ type: 'system', agent: 'System', action: '✅ Repo initialized' });
+            emit({ type: 'system', agent: 'System', action: '✅ Repo initialized with README' });
+            // Wait a moment for GitHub to process the commit
+            await new Promise(r => setTimeout(r, 2000));
           }
-        } else if (!refRes.ok) {
-          await refRes.text();
         }
       }
     } catch { validatedGitHub = null; }
@@ -413,6 +435,23 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
       }
     }
 
+    // Create git branches for each worker BEFORE they start coding
+    if (validatedGitHub) {
+      const defaultBr = validatedGitHub.defaultBranch || 'main';
+      for (const worker of workers) {
+        if (isAborted()) break;
+        if (!worker.assignedTicketTitle) continue;
+        const brName = `feat/ticket-${worker.assignedTicketTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30)}`;
+        const brResult = await ghCreateBranch(validatedGitHub.token, validatedGitHub.owner, validatedGitHub.repo, brName, defaultBr);
+        if ('error' in brResult) {
+          emit({ type: 'error', agent: 'System', action: `⚠️ Failed to create branch ${brName}: ${brResult.error.slice(0, 100)}` });
+        } else {
+          worker.branchName = brName;
+          emit({ type: 'action', agent: worker.roleTitle, action: `🔀 Branch created: ${brName}` });
+        }
+      }
+    }
+
     emit({ type: 'refresh', agent: 'System', action: '🔄 Team assembled, tickets assigned — starting work' });
     if (isAborted()) return;
 
@@ -498,14 +537,15 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
           ? ticket.acceptance_criteria.map((c: string, i: number) => `${i + 1}. ${c}`).join('\n')
           : '';
 
-        const ghInstructions = validatedGitHub
+        const branchName = worker.branchName || `feat/ticket-${ticket.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30)}`;
+        const ghInstructions = (validatedGitHub && worker.branchName)
           ? `## GitHub Workflow (REQUIRED)
-You MUST write real code using these tools in this order:
-1. create_branch — name: "feat/ticket-${ticket.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30)}"
-2. write_file — write 1-3 implementation files with REAL code (not placeholder). Use proper file paths like "src/components/Auth.tsx" or "src/api/users.ts"
-3. create_pull_request — title: "${ticket.title}", head: your branch name
+Your branch "${branchName}" is already created. Write real code using these tools:
+1. write_file — write 2-3 implementation files on branch="${branchName}". Use proper file paths like "src/components/Auth.tsx". Write REAL, complete, working code.
+2. create_pull_request — title: "${ticket.title}", head: "${branchName}"
 
-After creating the PR, post a message in chat saying you submitted a PR for "${ticket.title}".`
+IMPORTANT: For EVERY write_file call, set branch="${branchName}" exactly.
+After creating the PR, post a message in chat about it.`
           : `## Implementation
 Write your implementation as a detailed comment on the ticket using add_comment. Include real code in markdown code blocks.
 Then post a message in chat saying you completed "${ticket.title}".`;
@@ -523,7 +563,7 @@ ${criteria ? `Acceptance Criteria:\n${criteria}` : ''}
 ${ghInstructions}
 
 Write REAL, working implementation code. Not pseudocode, not placeholders.`,
-          `Write the code for "${ticket.title}" now. Use the GitHub tools to create a branch, write files, and create a PR.`,
+          `Write the code for "${ticket.title}" now. Use write_file to write files on branch "${branchName}", then create_pull_request.`,
           tools,
           round,
         );
@@ -552,25 +592,48 @@ Write REAL, working implementation code. Not pseudocode, not placeholders.`,
 
         emit({ type: 'thinking', agent: lead.roleTitle, action: `⏳ Reviewing ${reviewTickets.length} ticket(s)...` });
 
-        const ticketSummary = reviewTickets.map(t => `- "${t.title}": ${(t.description || '').slice(0, 100)}`).join('\n');
+        // CRITICAL: Include ticket IDs so leads can use add_comment
+        const ticketSummary = reviewTickets.map(t => `- ticket_id="${t.id}" "${t.title}": ${(t.description || '').slice(0, 100)}`).join('\n');
         const tools = getLeadTools();
 
-        await runAgentTurn(
-          lead,
-          `You are "${lead.roleTitle}" reviewing work on "${project.title}".
+        // Leads only get 1 iteration — they don't need multi-round tool calling
+        const leadToolCtx: ToolContext = {
+          baseUrl, apiKey: lead.apiKey, projectId, agentKeyId: lead.id,
+          agentName: lead.name, github: validatedGitHub,
+        };
+
+        const leadMessages: ChatCompletionMessageParam[] = [
+          {
+            role: 'system',
+            content: `You are "${lead.roleTitle}" reviewing work on "${project.title}".
 ${getRoleDescription(lead.roleTitle)}
 
-## Tickets to Review
+## Tickets to Review (use the ticket_id UUID for add_comment)
 ${ticketSummary}
 
-Do these things:
-1. Add a review comment on 1-2 tickets (add_comment) — give specific technical feedback on the implementation
-2. Write a knowledge entry about architecture decisions in your domain (write_knowledge)
+Do ALL of these in ONE round of tool calls:
+1. Add a review comment on 1-2 tickets using add_comment with the ticket_id UUID
+2. Write a knowledge entry (write_knowledge)
 3. Post a team update in chat (post_message)`,
-          `Review the submitted tickets. Add technical review comments, write knowledge, post update.`,
-          tools,
-          round,
-        );
+          },
+          { role: 'user', content: 'Review the submitted tickets. Call add_comment, write_knowledge, and post_message.' },
+        ];
+
+        const leadResponse = await openai.chat.completions.create({
+          model: MODEL, messages: leadMessages, tools,
+          tool_choice: 'required', temperature: 0.7,
+        });
+        const leadChoice = leadResponse.choices[0];
+        if (leadChoice.message.tool_calls) {
+          for (const toolCall of leadChoice.message.tool_calls) {
+            if (isAborted()) break;
+            if (toolCall.type !== 'function') continue;
+            let args;
+            try { args = JSON.parse(toolCall.function.arguments); } catch { continue; }
+            const { result, action } = await executeApiTool(toolCall.function.name, args, leadToolCtx);
+            emit({ type: 'action', agent: lead.roleTitle, action, round });
+          }
+        }
       }
 
       if (isAborted()) break;
