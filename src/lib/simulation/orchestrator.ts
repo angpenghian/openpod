@@ -44,7 +44,7 @@ export interface SimulationConfig {
   baseUrl: string;
   openaiApiKey: string;
   userId: string;
-  github: { token: string; owner: string; repo: string; installationId: number; defaultBranch?: string } | null;
+  github: { token: string; owner: string; repo: string; installationId: number; defaultBranch?: string; permissions?: Record<string, string> } | null;
   onEvent: (event: SimulationEvent) => void;
   signal: AbortSignal;
 }
@@ -179,6 +179,17 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
         const repoData = await repoRes.json();
         const defaultBranch = repoData.default_branch || 'main';
         validatedGitHub = { ...github, defaultBranch };
+
+        // Check GitHub App permissions
+        const perms = github.permissions || {};
+        const missingPerms: string[] = [];
+        if (perms.contents !== 'write') missingPerms.push('contents:write');
+        if (perms.pull_requests !== 'write') missingPerms.push('pull_requests:write');
+        if (missingPerms.length > 0) {
+          emit({ type: 'error', agent: 'System', action: `⚠️ GitHub App missing permissions: ${missingPerms.join(', ')}. Go to github.com/apps/openpod-work → Configure → Permissions.` });
+          // Still keep GitHub enabled for read operations — but warn clearly
+          emit({ type: 'system', agent: 'System', action: `📋 GitHub App permissions: ${JSON.stringify(perms)}` });
+        }
 
         // Check if repo is empty (no commits → default branch ref doesn't exist)
         const refRes = await fetch(
@@ -635,8 +646,8 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
       const ticketResponse = await openai.chat.completions.create({
         model: MODEL,
         messages: [
-          { role: 'system', content: `You are the Project Manager for "${project.title}".\n\n## Project Vision\n${project.description}\n\nCreate the work plan:\n1. **Create 6-10 tickets** — actionable work items with detailed descriptions (50+ chars) and acceptance criteria. Use priority: "urgent" for must-haves, "high" for important, "medium" for nice-to-have.\n   IMPORTANT: Do NOT include labels on tickets. Leave labels empty.\n2. **Post in chat** — Introduce yourself and outline the plan.\n3. **Write knowledge** — Document architecture decisions and tech stack.` },
-          { role: 'user', content: 'Create the tickets (NO labels field), post your intro, and write knowledge. Call create_ticket multiple times.' },
+          { role: 'system', content: `You are the Project Manager for "${project.title}".\n\n## Project Vision\n${project.description}\n\nCreate the work plan:\n1. **Create 10-15 tickets** — actionable work items with detailed descriptions (50+ chars) and acceptance criteria. Create MORE tickets than team members so everyone has work. Use priority: "urgent" for must-haves, "high" for important, "medium" for nice-to-have.\n   IMPORTANT: Do NOT include labels on tickets. Leave labels empty.\n2. **Post in chat** — Introduce yourself and outline the plan.\n3. **Write knowledge** — Document architecture decisions and tech stack.` },
+          { role: 'user', content: 'Create 10-15 tickets (NO labels field), post your intro, and write knowledge. Call create_ticket at least 10 times — we have a large team.' },
         ],
         tools: pmTicketTools,
         tool_choice: 'required',
@@ -850,13 +861,14 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
     }
 
     // ── Setup turns — only for fresh simulation, not resume ──
+    // Workers first (they pick up tickets), then leads (they review and write knowledge)
     if (!resuming) {
-    const sortedTeam = [
-      ...agents.filter(a => a.roleLevel === 'lead'),
+    const setupOrder = [
       ...agents.filter(a => a.roleLevel === 'worker'),
+      ...agents.filter(a => a.roleLevel === 'lead'),
     ];
 
-    for (const agent of sortedTeam) {
+    for (const agent of setupOrder) {
       if (isAborted()) break;
 
       emit({ type: 'thinking', agent: agent.roleTitle, action: `⏳ ${agent.roleTitle} joining team...` });
@@ -864,9 +876,23 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
       const roleDesc = getRoleDescription(agent.roleTitle, agent.roleLevel);
       const tools = getToolsForRole(agent.roleLevel, !!validatedGitHub);
 
-      await runAgentTurn(
-        agent,
-        `You are "${agent.roleTitle}" (your agent name is "${agent.name}") working on "${project.title}".
+      const setupPrompt = agent.roleLevel === 'lead'
+        ? `You are "${agent.roleTitle}" (your agent name is "${agent.name}") working on "${project.title}".
+
+## Your Role
+${roleDesc}
+
+## Project Vision
+${project.description}
+
+You just joined the team AS A LEAD. Do ALL of these:
+1. Call list_tickets ONCE to see the full board
+2. Post a message in chat introducing yourself as "${agent.roleTitle}" and your technical approach (post_message)
+3. Write a knowledge entry about your department's architecture decisions and tech standards (write_knowledge)
+4. Add review comments on 1-2 tickets in your domain (add_comment) — give technical guidance
+
+DO NOT pick up or self-assign any tickets. Leave tickets for workers. Your job is to review and guide.`
+        : `You are "${agent.roleTitle}" (your agent name is "${agent.name}") working on "${project.title}".
 
 ## Your Role
 ${roleDesc}
@@ -876,15 +902,21 @@ ${project.description}
 
 You just joined the team. Do ALL of these in this exact order:
 1. Call list_tickets ONCE (no filters) to see the full ticket board
-2. Pick an unassigned ticket matching YOUR skills — call update_ticket with ticket_id and status "in_progress"
+2. Pick an UNASSIGNED ticket (marked "⬜ UNASSIGNED") matching YOUR skills — call update_ticket with ticket_id and status "in_progress"
 3. Add a detailed comment on that ticket explaining your implementation plan (add_comment)
-4. Post a message in chat introducing yourself as "${agent.roleTitle}" and what you're working on (post_message). Use your REAL role title, never use placeholder text like "[Your Name]".
-5. If you're a lead, write a knowledge entry about your department's technical approach (write_knowledge)
+4. Post a message in chat introducing yourself as "${agent.roleTitle}" and what you're working on (post_message)
 
 IMPORTANT: The "id:" field in ticket listings is the UUID you need for update_ticket and add_comment.
-Do NOT call list_tickets more than once — you already have the full board.
-If a tool call fails, move on to the next action — do NOT retry the same call.`,
-        'Call list_tickets once, pick up a ticket, add a comment with your plan, then introduce yourself in chat.',
+Do NOT pick tickets marked "🔒 taken by another agent" — you will get a 403 error.
+Do NOT call list_tickets more than once.
+If a tool call fails, move on to the next action — do NOT retry the same call.`;
+
+      await runAgentTurn(
+        agent,
+        setupPrompt,
+        agent.roleLevel === 'lead'
+          ? 'Call list_tickets once, then introduce yourself in chat, write knowledge, and review tickets. Do NOT pick up tickets.'
+          : 'Call list_tickets once, pick up an UNASSIGNED ticket, add a comment with your plan, then introduce yourself in chat.',
         tools,
       );
     }

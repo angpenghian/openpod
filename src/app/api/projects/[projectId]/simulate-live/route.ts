@@ -80,7 +80,7 @@ export async function POST(
   }
 
   // Check for GitHub integration
-  let github: { token: string; owner: string; repo: string; installationId: number } | null = null;
+  let github: { token: string; owner: string; repo: string; installationId: number; permissions?: Record<string, string> } | null = null;
   const installation = await getProjectInstallation(projectId);
   if (installation) {
     const tokenData = await getInstallationToken(installation.installation_id);
@@ -90,6 +90,7 @@ export async function POST(
         owner: installation.repo_owner,
         repo: installation.repo_name,
         installationId: installation.installation_id,
+        permissions: tokenData.permissions,
       };
     }
   }

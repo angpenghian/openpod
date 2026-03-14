@@ -431,7 +431,7 @@ export async function executeApiTool(
         const ticketId = String(args.ticket_id);
         const { ok, status, data } = await callApi(ctx, 'POST', `/api/agent/v1/tickets/${ticketId}/approve`, {
           action: 'approve',
-          payout_cents: 0, // No real payout for simulation
+          payout_cents: 100, // Nominal $1.00 payout for simulation (creates ledger entry, no real Stripe transfer)
           comment: String(args.comment || 'Approved by PM'),
         });
         if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ approve_ticket failed (${status}: ${String(data.error || 'unknown').slice(0, 80)})` };
@@ -442,7 +442,7 @@ export async function executeApiTool(
       case 'get_repo_structure': {
         if (!ctx.github) return { result: 'ERROR: No GitHub repo connected', action: '⚠️ GitHub not available' };
         const result = await gh.getRepoTree(ctx.github.token, ctx.github.owner, ctx.github.repo, String(args.path || ''));
-        if ('error' in result) return { result: `ERROR: ${result.error}`, action: '⚠️ Failed to list repo' };
+        if ('error' in result) return { result: `ERROR: ${result.error}`, action: `⚠️ get_repo_structure failed: ${result.error.slice(0, 120)}` };
         const tree = result.entries.map(e => `${e.type === 'dir' ? '📁' : '📄'} ${e.path}`).join('\n');
         return { result: tree, action: `📁 Listed ${result.entries.length} items in ${args.path || '/'}` };
       }
@@ -460,14 +460,14 @@ export async function executeApiTool(
         if (!ctx.github) return { result: 'ERROR: No GitHub repo connected', action: '⚠️ GitHub not available' };
         const baseBranch = String(args.base || ctx.github.defaultBranch || 'main');
         const result = await gh.createBranch(ctx.github.token, ctx.github.owner, ctx.github.repo, String(args.branch_name), baseBranch);
-        if ('error' in result) return { result: `ERROR: ${result.error}`, action: `⚠️ Failed to create branch ${args.branch_name}` };
+        if ('error' in result) return { result: `ERROR: ${result.error}`, action: `⚠️ create_branch failed: ${result.error.slice(0, 120)}` };
         return { result: `Branch created: ${result.ref}`, action: `🔀 Created branch ${args.branch_name}` };
       }
 
       case 'write_file': {
         if (!ctx.github) return { result: 'ERROR: No GitHub repo connected', action: '⚠️ GitHub not available' };
         const result = await gh.writeFile(ctx.github.token, ctx.github.owner, ctx.github.repo, String(args.path), String(args.content), String(args.branch), String(args.message));
-        if ('error' in result) return { result: `ERROR: ${result.error}`, action: `⚠️ Failed to write ${args.path}` };
+        if ('error' in result) return { result: `ERROR: ${result.error}`, action: `⚠️ write_file failed: ${result.error.slice(0, 120)}` };
         return { result: `File written: ${result.path} (commit: ${result.commitSha.slice(0, 7)})`, action: `📝 Wrote ${args.path} on ${args.branch}` };
       }
 
@@ -475,7 +475,7 @@ export async function executeApiTool(
         if (!ctx.github) return { result: 'ERROR: No GitHub repo connected', action: '⚠️ GitHub not available' };
         const prBase = String(args.base || ctx.github.defaultBranch || 'main');
         const result = await gh.createPullRequest(ctx.github.token, ctx.github.owner, ctx.github.repo, String(args.title), String(args.head), prBase, args.body ? String(args.body) : undefined);
-        if ('error' in result) return { result: `ERROR: ${result.error}`, action: `⚠️ Failed to create PR` };
+        if ('error' in result) return { result: `ERROR: ${result.error}`, action: `⚠️ create_pr failed: ${result.error.slice(0, 120)}` };
         return { result: `PR #${result.number} created: ${result.html_url}`, action: `📝 Created PR #${result.number}: ${args.title}` };
       }
 
