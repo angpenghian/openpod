@@ -13,13 +13,10 @@ export const OPENPOD_TOOLS: ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'list_tickets',
-      description: 'List tickets in the project. Returns status, priority, assignee, description for each ticket.',
+      description: 'List ALL tickets in the project. Returns id, status, priority, assignee, description. Call this once to see the full board — do NOT call multiple times with filters.',
       parameters: {
         type: 'object',
-        properties: {
-          status: { type: 'string', enum: ['todo', 'in_progress', 'in_review', 'done'], description: 'Filter by status' },
-          assignee: { type: 'string', enum: ['me'], description: 'Set to "me" to see only your tickets' },
-        },
+        properties: {},
       },
     },
   },
@@ -46,12 +43,12 @@ export const OPENPOD_TOOLS: ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'update_ticket',
-      description: 'Update a ticket. Workers: self-assign (todo→in_progress) or submit for review (in_progress→in_review). Leads/PM: also update title, description, priority, labels.',
+      description: 'Update a ticket status. Workers: pick up (todo→in_progress) then submit (in_progress→in_review). Leads: review and pass to PM (in_review stays). ONLY PM can approve tickets to done — do NOT set status to "done" unless you are PM.',
       parameters: {
         type: 'object',
         properties: {
           ticket_id: { type: 'string', description: 'UUID of the ticket' },
-          status: { type: 'string', enum: ['todo', 'in_progress', 'in_review', 'done', 'cancelled'] },
+          status: { type: 'string', enum: ['todo', 'in_progress', 'in_review', 'cancelled'] },
           branch: { type: 'string', description: 'Git branch name' },
           deliverables: {
             type: 'array',
@@ -340,8 +337,6 @@ export async function executeApiTool(
       // ─── OpenPod Tools ───
       case 'list_tickets': {
         const params = new URLSearchParams({ project_id: ctx.projectId });
-        if (args.status) params.set('status', String(args.status));
-        if (args.assignee) params.set('assignee', String(args.assignee));
         const { ok, status, data } = await callApi(ctx, 'GET', `/api/agent/v1/tickets?${params}`);
         if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ list_tickets failed (${status}: ${String(data.error || 'unknown').slice(0, 80)})` };
         const tickets = (data.data as Array<{ id: string; ticket_number: number; title: string; description: string; status: string; priority: string; assignee_agent_key_id: string | null; labels: string[] }>) || [];

@@ -772,14 +772,16 @@ ${roleDesc}
 ## Project Vision
 ${project.description}
 
-You just joined the team. Your job:
-1. Use list_tickets to see the ticket board
-2. Pick up an unassigned ticket that matches YOUR skills — call update_ticket with its id and status "in_progress"
-3. Say hi briefly in chat (post_message)
-4. If you're a lead, write a knowledge entry about your department's approach
+You just joined the team. Do ALL of these in this exact order:
+1. Call list_tickets ONCE (no filters) to see the full ticket board
+2. Pick an unassigned ticket matching YOUR skills — call update_ticket with ticket_id and status "in_progress"
+3. Add a detailed comment on that ticket explaining your implementation plan (add_comment)
+4. Post a message in chat introducing yourself and what you're working on (post_message)
+5. If you're a lead, write a knowledge entry about your department's technical approach (write_knowledge)
 
-IMPORTANT: When you see tickets from list_tickets, the "id:" field is the UUID you need for update_ticket's ticket_id parameter.`,
-        'Start by calling list_tickets to see available work, then pick up a ticket and introduce yourself.',
+IMPORTANT: The "id:" field in ticket listings is the UUID you need for update_ticket and add_comment.
+Do NOT call list_tickets more than once — you already have the full board.`,
+        'Call list_tickets once, pick up a ticket, add a comment with your plan, then introduce yourself in chat.',
         tools,
       );
     }
@@ -827,18 +829,27 @@ IMPORTANT: When you see tickets from list_tickets, the "id:" field is the UUID y
 ## Your Role
 ${roleDesc}${hasGitHubNote}
 
-## Instructions
-- First call list_tickets to see current state
-- Use the "id:" UUID from ticket listings when calling update_ticket, add_comment, or approve_ticket
-- Pick up unassigned tickets matching YOUR skills (update_ticket with status "in_progress")
-- Move your in-progress tickets forward: add comments with progress, then set status to "in_review" when ready
-- ${agent.roleLevel === 'project_manager' ? 'Use approve_ticket on tickets in "done" or "in_review" status to finalize them' : 'Leads: review in_review tickets, move to done. Workers: focus on your assigned tickets.'}
-- Post meaningful updates in chat (post_message)
-- Write technical docs to knowledge (write_knowledge)
-${github && (agent.roleLevel === 'worker' || agent.roleLevel === 'lead') ? `- GitHub: create_branch → write_file → create_pull_request` : ''}
+## Instructions — DO ALL OF THESE EACH TURN:
+1. Call list_tickets ONCE (no filters) to see the full board
+2. Then take MULTIPLE actions based on what you see:
 
-IMPORTANT: Actually DO work — don't just list tickets. Pick one up, work on it, update its status. Make real progress each turn.`,
-          'Call list_tickets first, then take action based on what you see. Make real progress.',
+${agent.roleLevel === 'project_manager' ? `**As PM, you MUST do these each turn:**
+- approve_ticket on ANY ticket with status "in_review" — approve ALL of them
+- If all tickets are in_review or done, create new tickets for remaining work
+- Post a status update in chat summarizing team progress` : agent.roleLevel === 'lead' ? `**As Lead, you MUST do these each turn:**
+- Pick up an unassigned ticket (update_ticket → in_progress) if you don't have one
+- Add detailed comments on your ticket with implementation analysis
+- Move your in_progress ticket to in_review when you've added thorough comments
+- Write knowledge entries about architecture decisions in your domain
+- Post coordination updates in chat` : `**As Worker, you MUST do these each turn:**
+- If you don't have a ticket: pick up an unassigned one (update_ticket → in_progress)
+- Add detailed comments showing your work: code snippets, implementation notes, testing results
+- When your work is documented in comments, move ticket to in_review
+- Post progress updates in chat`}
+${github && (agent.roleLevel === 'worker' || agent.roleLevel === 'lead') ? `- GitHub: create_branch → write_file → create_pull_request for code deliverables` : ''}
+
+CRITICAL: Do NOT call list_tickets more than once. Take 3-5 ACTIONS per turn (comments, updates, chat, knowledge). Make VISIBLE progress.`,
+          'Call list_tickets once, then take multiple actions. Add comments, update statuses, post in chat. Make real progress.',
           tools,
           round,
         );
