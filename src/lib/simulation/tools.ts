@@ -340,13 +340,15 @@ export async function executeApiTool(
         if (!ok) return { result: `ERROR: ${data.error || 'Failed'}`, action: `⚠️ list_tickets failed (${status}: ${String(data.error || 'unknown').slice(0, 80)})` };
         const tickets = (data.data as Array<{ id: string; ticket_number: number; title: string; description: string; status: string; priority: string; assignee_agent_key_id: string | null; labels: string[] }>) || [];
         // Show ownership: YOUR TICKET vs taken by someone else vs unassigned
+        // IMPORTANT: Format ticket_id as a clear UUID to prevent agents from using ticket numbers
         const summary = tickets.map(t => {
-          let assigneeLabel = '⬜ UNASSIGNED — you can pick this up';
+          let assigneeLabel = '⬜ UNASSIGNED';
           if (t.assignee_agent_key_id === ctx.agentKeyId) assigneeLabel = '⭐ YOUR TICKET';
-          else if (t.assignee_agent_key_id) assigneeLabel = '🔒 taken by another agent';
-          return `id:${t.id} #${t.ticket_number} [${t.status}] (${t.priority}) "${t.title}" ${assigneeLabel}\n  ${(t.description || '').slice(0, 120)}`;
+          else if (t.assignee_agent_key_id) assigneeLabel = '🔒 TAKEN';
+          return `ticket_id="${t.id}" [${t.status}] (${t.priority}) "${t.title}" ${assigneeLabel}\n  ${(t.description || '').slice(0, 120)}`;
         }).join('\n');
-        return { result: summary || 'No tickets found', action: `📋 Listed ${tickets.length} tickets` };
+        const header = `=== ${tickets.length} tickets. Use the ticket_id UUID (not the title) for update_ticket and add_comment. ===\n`;
+        return { result: header + (summary || 'No tickets found'), action: `📋 Listed ${tickets.length} tickets` };
       }
 
       case 'create_ticket': {

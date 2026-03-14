@@ -900,16 +900,17 @@ ${roleDesc}
 ## Project Vision
 ${project.description}
 
-You just joined the team. Do ALL of these in this exact order:
-1. Call list_tickets ONCE (no filters) to see the full ticket board
-2. Pick an UNASSIGNED ticket (marked "⬜ UNASSIGNED") matching YOUR skills — call update_ticket with ticket_id and status "in_progress"
-3. Add a detailed comment on that ticket explaining your implementation plan (add_comment)
-4. Post a message in chat introducing yourself as "${agent.roleTitle}" and what you're working on (post_message)
+You just joined the team. Do these steps IN ORDER:
+1. Call list_tickets ONCE to see the full board
+2. Pick EXACTLY ONE unassigned ticket (marked "⬜ UNASSIGNED") — call update_ticket with the ticket_id (the long UUID string like "a1b2c3d4-...") and status "in_progress". ONLY PICK ONE TICKET.
+3. Add a comment on YOUR ticket with your implementation plan (add_comment)
+4. Post a chat message introducing yourself as "${agent.roleTitle}" (post_message)
 
-IMPORTANT: The "id:" field in ticket listings is the UUID you need for update_ticket and add_comment.
-Do NOT pick tickets marked "🔒 taken by another agent" — you will get a 403 error.
-Do NOT call list_tickets more than once.
-If a tool call fails, move on to the next action — do NOT retry the same call.`;
+CRITICAL:
+- The ticket_id is the UUID string shown as ticket_id="..." — NOT a number. Use the full UUID.
+- Pick ONLY ONE ticket. Do NOT call update_ticket more than once.
+- Do NOT pick tickets marked "🔒 TAKEN" — you will get a 403 error.
+- If a tool call fails, move on — do NOT retry.`;
 
       await runAgentTurn(
         agent,
@@ -969,7 +970,8 @@ ${roleDesc}${hasGitHubNote}
 2. Then take MULTIPLE actions based on what you see:
 
 ${agent.roleLevel === 'project_manager' ? `**As PM, you MUST do these each turn:**
-- approve_ticket on ANY ticket with status "in_review" — approve ALL of them
+- The ticket_id is the UUID string shown as ticket_id="..." — NOT a number. Always use the full UUID.
+- approve_ticket on ANY ticket with status "in_review" — approve ALL of them (use ticket_id UUID)
 - If all tickets are in_review or done, create new tickets for remaining work
 - Post a status update in chat summarizing team progress (use your title "Project Manager", NOT placeholder text)` : agent.roleLevel === 'lead' ? `**As Lead, your job is to REVIEW work and write knowledge — do NOT pick up tickets (leave those for workers):**
 - Add detailed review comments (add_comment) on tickets that are "in_progress" or "in_review" — give technical feedback, suggest improvements, review architecture
@@ -977,12 +979,17 @@ ${agent.roleLevel === 'project_manager' ? `**As PM, you MUST do these each turn:
 - Post coordination updates in chat — summarize what your team is working on, flag blockers, give direction (post_message)
 - If you already have a ticket assigned to you: add implementation comments with actual code snippets, then move it to in_review
 - Do NOT try to pick up unassigned tickets — workers handle implementation` : `**As Worker, you MUST do these each turn:**
-- Look for tickets marked "⬜ UNASSIGNED" — pick one up with update_ticket (set status to "in_progress")
-- If you already have a ticket (marked "⭐ YOUR TICKET"): add detailed comments with ACTUAL CODE — write real implementation code in your comments (functions, classes, config files, tests)
-- When your implementation is documented in comments, move your ticket to in_review
-- Post progress updates in chat (use your title "${agent.roleTitle}", NOT placeholder text)
-- Do NOT try to update tickets marked "🔒 taken by another agent" — you will get a 403 error`}
-${validatedGitHub && (agent.roleLevel === 'worker' || agent.roleLevel === 'lead') ? `- **GitHub workflow (REQUIRED for code work):** create_branch("feat/your-feature") → write_file(path, content, branch, message) → create_pull_request(title, head_branch). Default branch: "${validatedGitHub.defaultBranch || 'main'}". Write REAL implementation code in files.` : (agent.roleLevel === 'worker' ? `- No GitHub connected — write your implementation code DIRECTLY in ticket comments using markdown code blocks` : '')}
+- The ticket_id is the UUID string shown as ticket_id="..." — NOT a number. Always use the full UUID.
+- If you have NO ticket yet: pick ONE unassigned ticket (marked "⬜ UNASSIGNED") with update_ticket
+- Do NOT pick more than one ticket. Do NOT pick tickets marked "🔒 TAKEN".
+${validatedGitHub ? `- **WRITE CODE VIA GITHUB (REQUIRED):** This is your primary job each turn:
+  1. create_branch("feat/short-name") — creates a branch from "${validatedGitHub.defaultBranch || 'main'}"
+  2. write_file(path, content, branch, message) — write REAL implementation code (not placeholder)
+  3. After writing all files, create_pull_request(title, head_branch) — PR back to "${validatedGitHub.defaultBranch || 'main'}"
+  4. Then update_ticket to status "in_review" with the PR URL in deliverables
+- You MUST call create_branch + write_file + create_pull_request. This is MORE important than comments.` : `- Write REAL implementation code in ticket comments using markdown code blocks`}
+- Post progress updates in chat (use your title "${agent.roleTitle}")
+- Do NOT retry failed tool calls — move on to a different action`}
 
 CRITICAL RULES:
 - Do NOT call list_tickets more than once per turn.
