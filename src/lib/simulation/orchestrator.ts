@@ -285,85 +285,50 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
       github,
     };
 
-    // PM can't create positions via agent API — we'll handle that via admin client
-    // PM uses real API for tickets, chat, knowledge
-    const pmPrompt = `You are the Project Manager for "${project.title}".
-
-## Project Vision
-${project.description}
-
-## Your Job
-You just joined. You need to:
-
-1. **Plan the team** — Decide what positions this project needs. Output a list of positions you want using the create_position tool.
-   - Create leads FIRST, then workers
-   - Workers MUST specify reports_to_title pointing to their lead's exact title
-   - Only create what the project actually needs (4-8 positions)
-
-2. **Create tickets** — Break the project into 4-8 actionable tickets. Use create_ticket with detailed descriptions (50+ chars), acceptance criteria, and labels.
-
-3. **Post in chat** — Introduce yourself and outline the plan.
-
-4. **Write knowledge** — Document the architecture decisions and team plan.
-
-Be concise. A simple web app needs different roles than a distributed system.`;
-
-    // For PM planning, we use a mix: create_position via admin client, rest via real API
-    const pmPlanningTools = [
-      ...OPENPOD_TOOLS.filter(t => t.type === 'function' && ['create_ticket', 'post_message', 'write_knowledge'].includes(t.function.name)),
-      {
-        type: 'function' as const,
-        function: {
-          name: 'create_position',
-          description: 'Create a new position/role in the project. Create leads FIRST, then workers with reports_to_title.',
-          parameters: {
-            type: 'object',
-            properties: {
-              title: { type: 'string', description: 'Position title (e.g. "Frontend Lead", "Sr Backend Developer")' },
-              description: { type: 'string', description: 'What this role does' },
-              required_capabilities: { type: 'array', items: { type: 'string' }, description: 'Skills needed' },
-              role_level: { type: 'string', enum: ['lead', 'worker'] },
-              reports_to_title: { type: 'string', description: 'Title of the lead this role reports to (required for workers)' },
-            },
-            required: ['title', 'description', 'required_capabilities', 'role_level'],
+    // ── PM Step 1: Create positions (via admin client) ──
+    const createPositionTool = {
+      type: 'function' as const,
+      function: {
+        name: 'create_position',
+        description: 'Create a new position/role in the project. Create leads FIRST, then workers with reports_to_title.',
+        parameters: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'Position title (e.g. "Frontend Lead", "Sr Backend Developer")' },
+            description: { type: 'string', description: 'What this role does' },
+            required_capabilities: { type: 'array', items: { type: 'string' }, description: 'Skills needed' },
+            role_level: { type: 'string', enum: ['lead', 'worker'] },
+            reports_to_title: { type: 'string', description: 'Title of the lead this role reports to (required for workers)' },
           },
+          required: ['title', 'description', 'required_capabilities', 'role_level'],
         },
       },
-    ];
+    };
 
-    const pmMessages: ChatCompletionMessageParam[] = [
-      { role: 'system', content: pmPrompt },
-      { role: 'user', content: 'Build the team and plan the project. Create leads FIRST, then workers. Use create_position, create_ticket, post_message, and write_knowledge. Call multiple tools.' },
-    ];
-
-    const pmResponse = await openai.chat.completions.create({
+    const positionResponse = await openai.chat.completions.create({
       model: MODEL,
-      messages: pmMessages,
-      tools: pmPlanningTools,
+      messages: [
+        { role: 'system', content: `You are the Project Manager for "${project.title}".\n\n## Project Vision\n${project.description}\n\nPlan the team structure. Create leads FIRST, then workers. Workers MUST specify reports_to_title pointing to their lead's exact title. Only create what the project actually needs (4-8 positions). A simple web app needs different roles than a distributed system.` },
+        { role: 'user', content: 'Create the positions the project needs using create_position. Create ALL leads first, then ALL workers. Call the tool multiple times.' },
+      ],
+      tools: [createPositionTool],
       tool_choice: 'required',
       temperature: 0.7,
     });
 
     if (isAborted()) return;
 
-    // Execute PM's tool calls — sort leads before workers
-    const pmChoice = pmResponse.choices[0];
-    if (pmChoice.message.tool_calls) {
-      const sorted = [...pmChoice.message.tool_calls].sort((a, b) => {
+    // Execute position creation — sort leads before workers
+    const posChoice = positionResponse.choices[0];
+    if (posChoice.message.tool_calls) {
+      const sorted = [...posChoice.message.tool_calls].sort((a, b) => {
         if (a.type !== 'function' || b.type !== 'function') return 0;
-        const aName = a.function.name;
-        const bName = b.function.name;
-        // create_position leads first, then workers, then other tools
-        if (aName === 'create_position' && bName !== 'create_position') return -1;
-        if (aName !== 'create_position' && bName === 'create_position') return 1;
-        if (aName === 'create_position' && bName === 'create_position') {
-          try {
-            const aArgs = JSON.parse(a.function.arguments);
-            const bArgs = JSON.parse(b.function.arguments);
-            if (aArgs.role_level === 'lead' && bArgs.role_level !== 'lead') return -1;
-            if (aArgs.role_level !== 'lead' && bArgs.role_level === 'lead') return 1;
-          } catch { /* keep order */ }
-        }
+        try {
+          const aArgs = JSON.parse(a.function.arguments);
+          const bArgs = JSON.parse(b.function.arguments);
+          if (aArgs.role_level === 'lead' && bArgs.role_level !== 'lead') return -1;
+          if (aArgs.role_level !== 'lead' && bArgs.role_level === 'lead') return 1;
+        } catch { /* keep order */ }
         return 0;
       });
 
@@ -373,57 +338,79 @@ Be concise. A simple web app needs different roles than a distributed system.`;
         if (isAborted()) break;
         if (toolCall.type !== 'function') continue;
 
-        const fnName = toolCall.function.name;
         const args = JSON.parse(toolCall.function.arguments);
-
-        if (fnName === 'create_position') {
-          // Handle via admin client (no agent API for position creation)
-          let reportsTo: string | null = pmPositionId;
-          if (args.reports_to_title && typeof args.reports_to_title === 'string') {
-            const { data: match } = await db
+        let reportsTo: string | null = pmPositionId;
+        if (args.reports_to_title && typeof args.reports_to_title === 'string') {
+          const { data: match } = await db
+            .from('positions')
+            .select('id')
+            .eq('project_id', projectId)
+            .ilike('title', args.reports_to_title)
+            .maybeSingle();
+          if (match) reportsTo = match.id;
+          else {
+            const { data: fuzzy } = await db
               .from('positions')
               .select('id')
               .eq('project_id', projectId)
-              .ilike('title', args.reports_to_title)
+              .ilike('title', `%${args.reports_to_title}%`)
+              .limit(1)
               .maybeSingle();
-            if (match) reportsTo = match.id;
-            else {
-              const { data: fuzzy } = await db
-                .from('positions')
-                .select('id')
-                .eq('project_id', projectId)
-                .ilike('title', `%${args.reports_to_title}%`)
-                .limit(1)
-                .maybeSingle();
-              if (fuzzy) reportsTo = fuzzy.id;
-            }
+            if (fuzzy) reportsTo = fuzzy.id;
           }
-
-          const { error: posInsertErr } = await db.from('positions').insert({
-            project_id: projectId,
-            title: args.title,
-            description: args.description || '',
-            required_capabilities: args.required_capabilities || [],
-            role_level: args.role_level || 'worker',
-            reports_to: reportsTo,
-            sort_order: nextSortOrder++,
-            status: 'open',
-            pay_type: 'fixed',
-            max_agents: 1,
-            payment_status: 'unfunded',
-            amount_earned_cents: 0,
-          });
-
-          if (posInsertErr) {
-            emit({ type: 'error', agent: 'Project Manager', action: `⚠️ Failed to create position "${args.title}": ${posInsertErr.message}` });
-          } else {
-            emit({ type: 'action', agent: 'Project Manager', action: `👤 Created position: ${args.title} (${args.role_level})` });
-          }
-        } else {
-          // Real API call via tools.ts
-          const { action } = await executeApiTool(fnName, args, pmToolCtx);
-          emit({ type: 'action', agent: 'Project Manager', action });
         }
+
+        const { error: posInsertErr } = await db.from('positions').insert({
+          project_id: projectId,
+          title: args.title,
+          description: args.description || '',
+          required_capabilities: args.required_capabilities || [],
+          role_level: args.role_level || 'worker',
+          reports_to: reportsTo,
+          sort_order: nextSortOrder++,
+          status: 'open',
+          pay_type: 'fixed',
+          max_agents: 1,
+          payment_status: 'unfunded',
+          amount_earned_cents: 0,
+        });
+
+        if (posInsertErr) {
+          emit({ type: 'error', agent: 'Project Manager', action: `⚠️ Failed to create position "${args.title}": ${posInsertErr.message}` });
+        } else {
+          emit({ type: 'action', agent: 'Project Manager', action: `👤 Created position: ${args.title} (${args.role_level})` });
+        }
+      }
+    }
+
+    if (isAborted()) return;
+
+    // ── PM Step 2: Create tickets, chat, knowledge (via real API) ──
+    emit({ type: 'thinking', agent: 'Project Manager', action: '⏳ Creating tickets and project plan...' });
+
+    const pmTicketTools = OPENPOD_TOOLS.filter(t => t.type === 'function' && ['create_ticket', 'post_message', 'write_knowledge'].includes(t.function.name));
+
+    const ticketResponse = await openai.chat.completions.create({
+      model: MODEL,
+      messages: [
+        { role: 'system', content: `You are the Project Manager for "${project.title}".\n\n## Project Vision\n${project.description}\n\nThe team is being assembled. Now you need to:\n1. **Create 6-10 tickets** — Break the project into actionable work items. Each ticket needs a detailed description (50+ chars), acceptance criteria, and labels. Use priority: "critical" for must-haves, "high" for important, "medium" for nice-to-have.\n2. **Post in chat** — Introduce yourself and outline the project plan.\n3. **Write knowledge** — Document the architecture decisions, tech stack choices, and team plan.\n\nBe specific and actionable. Each ticket should be completable by one person.` },
+        { role: 'user', content: 'Create the tickets, post your intro message, and write the knowledge doc. Call create_ticket multiple times, plus post_message and write_knowledge.' },
+      ],
+      tools: pmTicketTools,
+      tool_choice: 'required',
+      temperature: 0.7,
+    });
+
+    if (isAborted()) return;
+
+    const ticketChoice = ticketResponse.choices[0];
+    if (ticketChoice.message.tool_calls) {
+      for (const toolCall of ticketChoice.message.tool_calls) {
+        if (isAborted()) break;
+        if (toolCall.type !== 'function') continue;
+        const args = JSON.parse(toolCall.function.arguments);
+        const { action } = await executeApiTool(toolCall.function.name, args, pmToolCtx);
+        emit({ type: 'action', agent: 'Project Manager', action });
       }
     }
 
@@ -702,15 +689,20 @@ Stay in character for YOUR specific role. Focus on making real progress. Be conc
         }
       }
 
-      // Check if all tickets are done
+      // Check if all tickets are done (but only if tickets exist)
+      const { data: totalTickets } = await db
+        .from('tickets')
+        .select('id')
+        .eq('project_id', projectId);
+
       const { data: activeTickets } = await db
         .from('tickets')
         .select('id, status')
         .eq('project_id', projectId)
         .not('status', 'in', '("done","cancelled")');
 
-      if (!activeTickets || activeTickets.length === 0) {
-        emit({ type: 'system', agent: 'System', action: '🎉 All tickets completed!' });
+      if (totalTickets && totalTickets.length > 0 && (!activeTickets || activeTickets.length === 0)) {
+        emit({ type: 'system', agent: 'System', action: `🎉 All ${totalTickets.length} tickets completed!` });
         break;
       }
     }
