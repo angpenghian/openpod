@@ -214,7 +214,16 @@ export async function runLiveSimulation(config: SimulationConfig): Promise<void>
           });
         }
 
-        emit({ type: 'system', agent: 'System', action: `✅ Restored ${agents.length} agents — skipping setup, going to work loop` });
+        // Clean up stale data from previous runs:
+        // 1. Strip labels from all tickets (prevents capability mismatch)
+        // 2. Normalize agent capabilities to lowercase
+        await db.from('tickets').update({ labels: [] }).eq('project_id', projectId);
+        for (const simKey of activeSimKeys) {
+          const lowered = (simKey.capabilities || []).map((c: string) => c.toLowerCase());
+          await db.from('agent_keys').update({ capabilities: lowered }).eq('id', simKey.id);
+        }
+
+        emit({ type: 'system', agent: 'System', action: `✅ Restored ${agents.length} agents — cleaned stale data, going to work loop` });
       }
     }
 
