@@ -588,7 +588,24 @@
   - [x] Agent name injection in prompts (no more "[Your Name]" placeholder)
   - [x] Error loop breaker (2 consecutive errors → break)
   - [x] Stronger role-specific prompts with explicit rules
-- [ ] **Test live simulation on production** — verify S34c fixes end-to-end
+- [x] ~~**Test live simulation on production** — verify S34c fixes end-to-end~~
+
+### Completed (Session 34d-35) — Orchestrator Rewrite + GitHub Fixes
+- [x] **Complete orchestrator rewrite** (S34e) — deterministic ticket assignment, LLM only writes code
+  - Hardcoded team: 2 leads + 3 workers (no LLM deciding roles)
+  - Round-robin ticket assignment (orchestrator, not LLM)
+  - Workers assigned exactly 1 ticket each
+  - PM approves deterministically (no LLM needed for status changes)
+- [x] **Empty repo detection** (S35) — `repoData.size === 0` instead of ref-check-for-404 (GitHub returns 409 for empty repos)
+  - Idempotent: handles 409/422 on README PUT as "already initialized"
+  - 2s delay after init for GitHub to process commit
+- [x] **Deterministic branch creation** (S35) — orchestrator creates branches via `ghCreateBranch()` before workers start
+  - Workers only have `write_file` + `create_pull_request` tools
+  - Branch name stored on worker object, injected into prompt
+- [x] **Lead ticket IDs** (S35) — review summary includes `ticket_id="UUID"` for each ticket
+  - Single OpenAI call (no more 5x iteration loop)
+- [x] Commits: `db481c0`, `7237971`, `41fa34f`, `5e78692` (rewrite), `f932f33` (S35 fixes)
+- [ ] **Test live simulation on production** — verify S35 fixes (branches, writes, PRs)
 
 ### Not Started (Phase 2 remaining)
 - [ ] Dashboard rework (richer project cards)

@@ -1,6 +1,6 @@
 # OpenPod — Status
 
-## Current Phase: Session 34c — Live simulation quality fixes deployed. Labels removed, error loops broken, role restrictions tightened, prompts improved. Commits `929cdf6` + `e88f8f1`. Ready for next simulation test.
+## Current Phase: Session 35 — GitHub simulation fixes deployed. Empty repo detection, deterministic branch creation, lead ticket IDs. Commit `f932f33`. Ready for next simulation test.
 
 ## Positioning (REVISED Session 28)
 **Human-first:** "Post your project. AI agents build it." — full workspace for managing AI agent teams.
@@ -9,7 +9,7 @@
 
 ## What's Working
 
-### Full Feature Set (Sessions 1-34c)
+### Full Feature Set (Sessions 1-35)
 - **LIVE at openpod.work** — deployed on Vercel, auto-deploys from GitHub
 - 40+ production API endpoints (agent registration, marketplace, projects, tickets, chat, memory, webhooks, GitHub, payments)
 - Agent marketplace: browse, register, profile pages with tier system
@@ -19,16 +19,16 @@
 - **FundProjectButton** (Session 33): Project owners fund escrow via Stripe Checkout
 - **SetupPayoutsButton** (Session 33): Agent owners set up Stripe Connect on profile page
 - **Admin Simulation — Scripted** (Session 33): 12-step demo seeding (no OpenAI). Dual admin guard. **WORKS**
-- **Admin Simulation — Live LLM** (Session 34): GPT-4o-mini agents + 15 tools + SSE streaming. **DEPLOYED — needs test after S34c fixes**
+- **Admin Simulation — Live LLM** (Session 34-35): GPT-4o-mini agents + 15 tools + SSE streaming. Deterministic orchestration (ticket assignment, branch creation, approval). **DEPLOYED — testing after S35 fixes**
 - **Real-time Supabase subscriptions** (Session 34): Tickets + messages tables added to realtime publication
 - **Redirect fix** (Session 34b): 5-hop manual redirect loop preserves auth headers. Vercel domain flipped (openpod.work = primary).
-- **Simulation quality** (Session 34c): Labels removed, only PM creates tickets, Phase 0 cleanup, error loop breaker, no placeholder text
+- **Simulation quality** (Session 34c-35): Labels removed, Phase 0 cleanup, error loop breaker, empty repo init, deterministic branches, lead ticket IDs
 - **x402 Protocol** (Session 30): Agent-to-agent USDC payments on Base (code built, wallet pending)
 - Payment model: position = contract, approved deliverables → payout, 10% commission. Dual rails: Stripe (USD) + x402 (USDC) + ledger fallback
 - Heartbeat endpoint: single polling call returns all pending work
 - **GitHub App Integration** (Session 25-26): scoped tokens, PR listing, deliverable verification, auto-review
 - **Sessions 27-33:** Reviews, search, onboarding, docs, webhooks, Redis rate limiting, dependencies, CI/CD, email, framing, ClawHub skill, Stripe dashboard, 133+ QA fixes
-- **Session 34-34c:** Live LLM simulation + real-time subscriptions + redirect fix + simulation quality fixes
+- **Session 34-35:** Live LLM simulation + real-time subscriptions + redirect fix + simulation quality fixes + GitHub code writing fixes
 
 ### Infrastructure
 - Schema v5-v13 ALL deployed on Supabase
@@ -63,20 +63,18 @@
 - **x402 wallet needed** — Ethereum address for platform commission, add to Vercel
 - **Cold start problem** — demo content via simulation helps, but need real agents
 
-## Next Steps (Session 35+)
-1. **Test live simulation on production** — verify S34c fixes (agents create real work, no loops/errors)
-2. **Connect GitHub to a project** — test GitHub code writing (branches, commits, PRs)
-3. **Create platform wallet** — Ethereum address for x402 commission
-4. **Complete Stripe Go Live** — finish identity verification checklist
-5. **Promote** — OpenClaw Discord, awesome-openclaw-skills PR, HN, Product Hunt
+## Next Steps (Session 36+)
+1. **Test live simulation on production** — verify S35 fixes (agents create branches, write files, create PRs)
+2. **Create platform wallet** — Ethereum address for x402 commission
+3. **Complete Stripe Go Live** — finish identity verification checklist
+4. **Promote** — OpenClaw Discord, awesome-openclaw-skills PR, HN, Product Hunt
 
 ## Roadmap
 
 ### Immediate
 1. Test live simulation end-to-end on production
-2. Connect GitHub to a project + test code writing
-3. Configure x402 (wallet + env vars)
-4. Complete Stripe Go Live checklist
+2. Configure x402 (wallet + env vars)
+3. Complete Stripe Go Live checklist
 
 ### Phase 4: Growth
 - Show HN launch post

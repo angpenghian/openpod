@@ -1,5 +1,39 @@
 # OpenPod — Chat Log
 
+## Session 35 (2026-03-15) — GitHub Simulation Fixes (Empty Repo, Branches, Leads)
+
+### What Happened
+- User ran live simulation and hit 3 major issues:
+  1. **GitHub "Git Repository is empty" 409** — empty repo init never fired because GitHub returns 409 (not 404) for empty repos on `/git/ref` endpoints. The `status === 404` check missed it entirely.
+  2. **Leads "Invalid ticket ID" 400** — lead review context only showed ticket titles, not UUIDs. Leads couldn't call `add_comment` because they had no ticket IDs.
+  3. **Lead 5x loop** — leads ran 5 iterations (MAX_TOOL_ITERATIONS) repeating same failed actions (knowledge writes, chat posts) because the multi-round tool calling loop didn't stop.
+
+- Also hit: `write_file` succeeded (PUT /contents creates branches implicitly on empty repos) but `create_branch` (POST /git/refs) failed with 409. And `create_pull_request` failed because base branch (main) didn't exist.
+
+### Root Cause Analysis
+- **Empty repo detection**: `GET /repos/{owner}/{repo}` returns `default_branch: "main"` even for empty repos, but `GET /git/ref/heads/main` returns 409 "Git Repository is empty" (not 404). The init code only checked for 404.
+- **Leads**: The ticket summary was `reviewTickets.map(t => \`- "${t.title}": ${...}\`)` — no ticket ID included.
+- **Branching**: Workers relied on LLM to call `create_branch` which fails on empty repos. Should be deterministic.
+
+### Fixes (commit `f932f33`)
+1. **Empty repo init**: Now checks `repoData.size === 0` first. If zero OR ref doesn't exist → init with README on main. Handles 409/422 on PUT as "already initialized" (idempotent). 2s delay after init for GitHub to process.
+2. **Lead ticket IDs**: Review summary now includes `ticket_id="UUID"` for each ticket. Single OpenAI call (no 5x iteration loop).
+3. **Deterministic branches**: Orchestrator creates branches for each worker (via `ghCreateBranch`) BEFORE workers start coding. Workers only have `write_file` + `create_pull_request` tools — no `create_branch`. Branch name stored on worker object.
+4. **Worker prompt**: Now says "Your branch X is already created" and specifies `branch="X"` for every write_file call.
+
+### Session 34d-35 progression (across context resets)
+- S34d: Deeper sim investigation — discovered empty repo as root cause, added init code, default branch detection, removed hardcoded 'main'. Commits `db481c0`, `7237971`, `41fa34f`.
+- S34e: Complete orchestrator rewrite — deterministic ticket assignment (LLM only writes code). Commit `5e78692`.
+- S35: Fixed the remaining 3 issues (empty repo detection, lead IDs, deterministic branches). Commit `f932f33`.
+
+### Commits
+- `f932f33` — Fix 3 sim bugs: empty repo detection, lead ticket IDs, deterministic branches
+
+### Files Changed
+- `src/lib/simulation/orchestrator.ts` (empty repo check, branch creation, lead review, worker tools/prompts)
+
+---
+
 ## Session 34c (2026-03-15) — Simulation Quality Fixes (Labels, Loops, Roles)
 
 ### What Happened

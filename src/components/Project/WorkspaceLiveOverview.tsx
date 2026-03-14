@@ -13,10 +13,7 @@ import { formatCents, TICKET_STATUS_LABELS } from '@/lib/constants';
 import Link from 'next/link';
 import type { Project, Position, Message, Ticket as TicketType, KnowledgeEntry } from '@/types';
 
-interface LiveChat { id: string; agent: string; content: string }
-interface LiveTicket { id: string; title: string; priority: string; number: number }
 interface LiveKnowledge { id: string; title: string; category: string }
-interface LivePosition { id: string; title: string; roleLevel: string }
 
 interface Props {
   projectId: string;
@@ -42,20 +39,18 @@ export default function WorkspaceLiveOverview({
   const supabase = useMemo(() => createClient(), []);
   const [realtimeMessages, setRealtimeMessages] = useState<Message[]>([]);
   const [realtimeTickets, setRealtimeTickets] = useState<TicketType[]>([]);
-  const [liveChats, setLiveChats] = useState<LiveChat[]>([]);
-  const [liveTickets, setLiveTickets] = useState<LiveTicket[]>([]);
+  // liveChats removed — user messages come through real-time subscription (no duplication)
   const [liveKnowledge, setLiveKnowledge] = useState<LiveKnowledge[]>([]);
-  const [livePositions, setLivePositions] = useState<LivePosition[]>([]);
+  const [realtimePositions, setRealtimePositions] = useState<Position[]>([]);
   const [showGithubBanner, setShowGithubBanner] = useState(searchParams.get('github') === 'connected');
   const chatRef = useRef<HTMLDivElement>(null);
-  const ticketCounter = useRef(0);
 
   // Auto-scroll chat when new live messages appear
   useEffect(() => {
     if (chatRef.current) {
       chatRef.current.scrollTop = chatRef.current.scrollHeight;
     }
-  }, [liveChats, realtimeMessages]);
+  }, [realtimeMessages]);
 
   // ── Supabase real-time: messages for this project's channels ──
   const seenMsgIds = useRef(new Set<string>());
@@ -119,28 +114,64 @@ export default function WorkspaceLiveOverview({
   }, [projectId, supabase]);
 
 
-  // Merge server positions with live-created positions for org chart
-  const allPositions = useMemo<Position[]>(() => [
-    ...positions,
-    ...livePositions.map((lp, i) => ({
-      id: lp.id,
-      project_id: projectId,
-      title: lp.title,
-      description: null,
-      required_capabilities: null,
-      pay_rate_cents: null,
-      pay_type: 'fixed' as const,
-      max_agents: 1,
-      status: 'open' as const,
-      role_level: lp.roleLevel as Position['role_level'],
-      reports_to: null,
-      sort_order: positions.length + i,
-      system_prompt: null,
-      payment_status: 'unfunded' as const,
-      amount_earned_cents: 0,
-      created_at: '',
-    })),
-  ], [positions, livePositions, projectId]);
+  // ── Supabase real-time: knowledge entries for this project ──
+  useEffect(() => {
+    const chan = supabase
+      .channel(`overview-knowledge-${projectId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'knowledge_entries', filter: `project_id=eq.${projectId}` },
+        (payload) => {
+          const raw = payload.new as KnowledgeEntry;
+          setLiveKnowledge(prev => {
+            if (prev.some(k => k.id === raw.id)) return prev;
+            return [...prev, { id: raw.id, title: raw.title, category: raw.category }];
+          });
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(chan); };
+  }, [projectId, supabase]);
+
+  // ── Supabase real-time: positions for this project (org chart updates) ──
+  useEffect(() => {
+    const chan = supabase
+      .channel(`overview-positions-${projectId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'positions', filter: `project_id=eq.${projectId}` },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const raw = payload.new as Position;
+            setRealtimePositions(prev => {
+              if (prev.some(p => p.id === raw.id)) return prev;
+              return [...prev, raw];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as Position;
+            setRealtimePositions(prev => {
+              const filtered = prev.filter(p => p.id !== updated.id);
+              return [...filtered, updated];
+            });
+          } else if (payload.eventType === 'DELETE') {
+            const old = payload.old as { id: string };
+            setRealtimePositions(prev => prev.filter(p => p.id !== old.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(chan); };
+  }, [projectId, supabase]);
+
+  // Merge server positions with real-time updates (real-time overrides initial for same id)
+  const allPositions = useMemo<Position[]>(() => {
+    const map = new Map<string, Position>();
+    for (const p of positions) map.set(p.id, p);
+    for (const p of realtimePositions) map.set(p.id, p);
+    return Array.from(map.values());
+  }, [positions, realtimePositions]);
 
   // Merge initial tickets with real-time updates (real-time overrides initial for same id)
   const mergedTickets = useMemo(() => {
@@ -162,9 +193,9 @@ export default function WorkspaceLiveOverview({
 
   const totalPositions = allPositions.length;
   const openPositions = allPositions.filter(p => p.status === 'open').length;
-  const ticketCount = mergedTickets.length + liveTickets.length;
-  const hasMessages = mergedMessages.length > 0 || liveChats.length > 0;
-  const hasTickets = mergedTickets.length > 0 || liveTickets.length > 0;
+  const ticketCount = mergedTickets.length;
+  const hasMessages = mergedMessages.length > 0;
+  const hasTickets = mergedTickets.length > 0;
   const hasKnowledge = initialKnowledge.length > 0 || liveKnowledge.length > 0;
 
   return (
@@ -252,9 +283,6 @@ export default function WorkspaceLiveOverview({
                   {mergedTickets.map((ticket) => (
                     <TicketRow key={ticket.id} title={ticket.title} priority={ticket.priority} status={ticket.status} />
                   ))}
-                  {liveTickets.map((ticket) => (
-                    <TicketRow key={ticket.id} title={ticket.title} priority={ticket.priority} status="todo" live />
-                  ))}
                 </div>
               ) : (
                 <p className="text-xs text-muted px-4 py-6 text-center">No tickets yet. Once a PM agent is hired, they&apos;ll create and assign tasks.</p>
@@ -274,9 +302,6 @@ export default function WorkspaceLiveOverview({
                   {mergedMessages.map((msg) => (
                     <ChatMessage key={msg.id} message={msg} />
                   ))}
-                  {liveChats.map((msg) => (
-                    <LiveChatBubble key={msg.id} agent={msg.agent} content={msg.content} />
-                  ))}
                 </div>
               ) : (
                 <p className="text-xs text-muted text-center py-4">No messages yet. Post a message to your team below.</p>
@@ -286,11 +311,6 @@ export default function WorkspaceLiveOverview({
                   channelId={channelId}
                   projectId={projectId}
                   userId={userId}
-                  onMessageSent={(msg) => setLiveChats(prev => [...prev, {
-                    id: `user-${Date.now()}`,
-                    agent: msg.author,
-                    content: msg.content,
-                  }])}
                 />
               )}
               {!channelId && (
@@ -406,23 +426,6 @@ function ChatMessage({ message }: { message: Message }) {
           {isAgent && <span className="text-xs text-secondary">bot</span>}
         </div>
         <p className="text-sm text-muted">{message.content}</p>
-      </div>
-    </div>
-  );
-}
-
-function LiveChatBubble({ agent, content }: { agent: string; content: string }) {
-  return (
-    <div className="flex gap-2">
-      <div className="h-6 w-6 rounded-md flex items-center justify-center shrink-0 text-xs font-medium bg-secondary/15 text-secondary">
-        {agent.charAt(0).toUpperCase()}
-      </div>
-      <div className="min-w-0">
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-medium">{agent}</span>
-          <span className="text-xs text-secondary">bot</span>
-        </div>
-        <p className="text-sm text-muted">{content}</p>
       </div>
     </div>
   );
