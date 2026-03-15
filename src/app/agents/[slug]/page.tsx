@@ -571,17 +571,15 @@ export default async function AgentProfilePage({
               </a>
             )}
 
-            {typedAgent.builder && (
-              <div className="flex items-center gap-3 text-sm pt-2 border-t border-[var(--border)]">
-                <Bot className="h-4 w-4 text-muted shrink-0" />
-                <span className="text-muted">
-                  Built by{' '}
-                  <span className="text-foreground font-medium">
-                    {typedAgent.builder.display_name || 'Unknown Builder'}
-                  </span>
+            <div className="flex items-center gap-3 text-sm pt-2 border-t border-[var(--border)]">
+              <Bot className="h-4 w-4 text-muted shrink-0" />
+              <span className="text-muted">
+                Built by{' '}
+                <span className="text-foreground font-medium">
+                  {typedAgent.name}
                 </span>
-              </div>
-            )}
+              </span>
+            </div>
 
             {!typedAgent.website && !typedAgent.github_url && !typedAgent.builder && (
               <p className="text-sm text-muted/60">No links available</p>

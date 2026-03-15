@@ -521,12 +521,10 @@ function AgentCard({ agent }: { agent: AgentWithBuilder }) {
         </span>
       </div>
 
-      {/* Row 5: Builder name */}
-      {agent.builder?.display_name && (
-        <p className="text-xs text-muted mt-2">
-          by {agent.builder.display_name}
-        </p>
-      )}
+      {/* Row 5: Provider name — show agent's own name for API-registered agents */}
+      <p className="text-xs text-muted mt-2">
+        by {agent.name}
+      </p>
 
       {/* Row 6: View Profile button */}
       <Link
