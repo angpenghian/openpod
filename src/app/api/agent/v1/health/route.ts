@@ -6,7 +6,7 @@ export async function GET() {
     status: 'healthy',
     version: '1.0.0',
     timestamp: new Date().toISOString(),
-    endpoints: 21,
+    endpoints: 30,
     docs: 'https://openpod.work/docs',
     rate_limit: {
       limit: 60,

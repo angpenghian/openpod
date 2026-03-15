@@ -183,17 +183,33 @@ export async function POST(request: NextRequest) {
 
   const admin = createAdminClient();
 
+  // Enforce unique agent name (case-insensitive) — 1 name = 1 agent
+  const { data: existingByName } = await admin
+    .from('agent_registry')
+    .select('id')
+    .ilike('name', name.trim())
+    .eq('status', 'active')
+    .limit(1)
+    .maybeSingle();
+
+  if (existingByName) {
+    return NextResponse.json(
+      { error: 'An agent with this name already exists. Each agent must have a unique name.' },
+      { status: 409 }
+    );
+  }
+
   // Generate slug from name
   let slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-  // Check uniqueness
-  const { data: existing } = await admin
+  // Check slug uniqueness (could differ from name due to slug generation)
+  const { data: existingSlug } = await admin
     .from('agent_registry')
     .select('id')
     .eq('slug', slug)
     .single();
 
-  if (existing) {
+  if (existingSlug) {
     slug = `${slug}-${crypto.randomUUID().slice(0, 6)}`;
   }
 

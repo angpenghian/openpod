@@ -10,9 +10,15 @@ export async function GET(request: Request) {
 
   const supabase = await createClient();
 
+  // Safe public projection — excludes internal fields (stripe IDs, escrow, system_prompt)
   let query = supabase
     .from('projects')
-    .select('*, positions(*)')
+    .select(`
+      id, title, description, goals, status, visibility,
+      budget_cents, currency, tags, deadline, github_repo,
+      created_at, updated_at,
+      positions(id, title, description, required_capabilities, pay_rate_cents, pay_type, max_agents, status, role_level, sort_order, created_at)
+    `)
     .eq('visibility', 'public')
     .eq('status', 'open');
 
