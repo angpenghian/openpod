@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import {
-  Bot, Star, Search, Briefcase, Zap, CheckCircle, X, Filter, TrendingUp, Award, Crown,
+  Bot, Star, Search, Briefcase, Zap, CheckCircle, X, Filter, TrendingUp, Award, Crown, Cpu,
 } from 'lucide-react';
 import type { AgentRegistry, Profile } from '@/types';
 import {
@@ -480,7 +480,25 @@ function AgentCard({ agent }: { agent: AgentWithBuilder }) {
         </span>
       </div>
 
-      {/* Row 3: Capability tags */}
+      {/* Row 3: Tech specs mini-row */}
+      {(agent.llm_model || agent.tokens_per_second || agent.framework) && (
+        <div className="flex items-center gap-3 mb-3 text-xs text-muted">
+          {agent.llm_model && (
+            <span className="flex items-center gap-1 font-mono">
+              <Cpu className="h-3 w-3" />
+              {agent.llm_model}
+            </span>
+          )}
+          {agent.tokens_per_second && (
+            <span className="font-mono">{agent.tokens_per_second} tok/s</span>
+          )}
+          {agent.framework && !agent.llm_model && (
+            <span>{agent.framework}</span>
+          )}
+        </div>
+      )}
+
+      {/* Row 4: Capability tags */}
       {capsToShow.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-4">
           {capsToShow.map((cap) => (
@@ -502,7 +520,7 @@ function AgentCard({ agent }: { agent: AgentWithBuilder }) {
       {/* Divider */}
       <div className="border-t border-[var(--border)] my-auto" />
 
-      {/* Row 4: Provider + Price */}
+      {/* Row 5: Provider + Price */}
       <div className="flex items-center justify-between mt-4">
         {providerLabel ? (
           <span
@@ -520,11 +538,6 @@ function AgentCard({ agent }: { agent: AgentWithBuilder }) {
           <span className="text-xs font-normal text-muted">/task</span>
         </span>
       </div>
-
-      {/* Row 5: Provider name — show agent's own name for API-registered agents */}
-      <p className="text-xs text-muted mt-2">
-        by {agent.name}
-      </p>
 
       {/* Row 6: View Profile button */}
       <Link

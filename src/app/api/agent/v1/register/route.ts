@@ -53,12 +53,24 @@ export async function POST(request: NextRequest) {
     website, context_window, autonomy_level, tools,
     supports_streaming, supports_function_calling,
     wallet_address,
+    // v15 profile fields
+    framework, version, languages, source_url, demo_url,
+    hosted_on, max_concurrent, tokens_per_second,
+    // existing perf fields
+    latency_ms, token_cost_input, token_cost_output,
+    max_output_tokens, uptime_pct, avg_error_rate,
+    github_url,
   } = body as {
     name?: string; tagline?: string; description?: string; capabilities?: string[];
     llm_provider?: string; llm_model?: string; pricing_type?: string; pricing_cents?: number;
     website?: string; context_window?: number; autonomy_level?: string; tools?: string[];
     supports_streaming?: boolean; supports_function_calling?: boolean;
     wallet_address?: string;
+    framework?: string; version?: string; languages?: string[]; source_url?: string;
+    demo_url?: string; hosted_on?: string; max_concurrent?: number; tokens_per_second?: number;
+    latency_ms?: number; token_cost_input?: number; token_cost_output?: number;
+    max_output_tokens?: number; uptime_pct?: number; avg_error_rate?: number;
+    github_url?: string;
   };
 
   // Validate wallet address if provided
@@ -113,6 +125,60 @@ export async function POST(request: NextRequest) {
   }
   if (tools && Array.isArray(tools) && tools.some((t: unknown) => typeof t !== 'string' || (t as string).length > 100)) {
     return NextResponse.json({ error: 'Each tool must be a string under 100 chars' }, { status: 400 });
+  }
+  // v15 field validation
+  if (framework && (typeof framework !== 'string' || framework.length > 100)) {
+    return NextResponse.json({ error: 'framework must be a string under 100 chars' }, { status: 400 });
+  }
+  if (version && (typeof version !== 'string' || version.length > 50)) {
+    return NextResponse.json({ error: 'version must be a string under 50 chars' }, { status: 400 });
+  }
+  if (languages && Array.isArray(languages)) {
+    if (languages.length > 20) {
+      return NextResponse.json({ error: 'Maximum 20 languages allowed' }, { status: 400 });
+    }
+    if (languages.some((l: unknown) => typeof l !== 'string' || (l as string).length > 50)) {
+      return NextResponse.json({ error: 'Each language must be a string under 50 chars' }, { status: 400 });
+    }
+  }
+  if (source_url && typeof source_url === 'string') {
+    try {
+      const u = new URL(source_url);
+      if (!['https:', 'http:'].includes(u.protocol)) {
+        return NextResponse.json({ error: 'source_url must be an HTTP(S) URL' }, { status: 400 });
+      }
+    } catch {
+      return NextResponse.json({ error: 'source_url must be a valid URL' }, { status: 400 });
+    }
+  }
+  if (demo_url && typeof demo_url === 'string') {
+    try {
+      const u = new URL(demo_url);
+      if (!['https:', 'http:'].includes(u.protocol)) {
+        return NextResponse.json({ error: 'demo_url must be an HTTP(S) URL' }, { status: 400 });
+      }
+    } catch {
+      return NextResponse.json({ error: 'demo_url must be a valid URL' }, { status: 400 });
+    }
+  }
+  if (github_url && typeof github_url === 'string') {
+    try {
+      const u = new URL(github_url);
+      if (!['https:', 'http:'].includes(u.protocol)) {
+        return NextResponse.json({ error: 'github_url must be an HTTP(S) URL' }, { status: 400 });
+      }
+    } catch {
+      return NextResponse.json({ error: 'github_url must be a valid URL' }, { status: 400 });
+    }
+  }
+  if (hosted_on && (typeof hosted_on !== 'string' || hosted_on.length > 100)) {
+    return NextResponse.json({ error: 'hosted_on must be a string under 100 chars' }, { status: 400 });
+  }
+  if (max_concurrent != null && (typeof max_concurrent !== 'number' || max_concurrent < 1 || max_concurrent > 10000)) {
+    return NextResponse.json({ error: 'max_concurrent must be between 1 and 10000' }, { status: 400 });
+  }
+  if (tokens_per_second != null && (typeof tokens_per_second !== 'number' || tokens_per_second < 0 || tokens_per_second > 100000)) {
+    return NextResponse.json({ error: 'tokens_per_second must be between 0 and 100000' }, { status: 400 });
   }
 
   const admin = createAdminClient();
@@ -171,12 +237,28 @@ export async function POST(request: NextRequest) {
       pricing_type: pricing_type as 'per_task' | 'hourly' | 'monthly',
       pricing_cents,
       website: website || null,
+      github_url: github_url || null,
       context_window: context_window ?? null,
+      latency_ms: latency_ms ?? null,
+      token_cost_input: token_cost_input ?? null,
+      token_cost_output: token_cost_output ?? null,
+      max_output_tokens: max_output_tokens ?? null,
       autonomy_level: autonomy_level || null,
       tools: tools || [],
+      uptime_pct: uptime_pct ?? null,
+      avg_error_rate: avg_error_rate ?? null,
       supports_streaming: supports_streaming ?? false,
       supports_function_calling: supports_function_calling ?? false,
       wallet_address: wallet_address || null,
+      // v15 fields
+      framework: framework || null,
+      version: version || null,
+      languages: languages || [],
+      source_url: source_url || null,
+      demo_url: demo_url || null,
+      hosted_on: hosted_on || null,
+      max_concurrent: max_concurrent ?? null,
+      tokens_per_second: tokens_per_second ?? null,
       status: 'active',
     })
     .select('id')

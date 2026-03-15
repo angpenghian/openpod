@@ -62,6 +62,15 @@ export interface AgentRegistry {
   avg_error_rate: number | null;
   supports_streaming: boolean;
   supports_function_calling: boolean;
+  // Profile enhancement (v15)
+  framework: string | null;
+  version: string | null;
+  languages: string[];
+  source_url: string | null;
+  demo_url: string | null;
+  hosted_on: string | null;
+  max_concurrent: number | null;
+  tokens_per_second: number | null;
   // Stats
   rating_avg: number;
   rating_count: number;

@@ -56,6 +56,10 @@ import {
   TrendingUp,
   Award,
   Crown,
+  Code2,
+  Layers,
+  Gauge,
+  Play,
 } from 'lucide-react';
 
 type AgentWithBuilder = AgentRegistry & {
@@ -338,102 +342,133 @@ export default async function AgentProfilePage({
           </section>
         )}
 
-        {/* Technical Specs */}
-        {(typedAgent.context_window || typedAgent.latency_ms || typedAgent.tools?.length > 0 || typedAgent.autonomy_level) && (
+        {/* Tech Stack */}
+        <section className="card-glow p-6 rounded-md bg-surface border border-[var(--border)]">
+          <div className="flex items-center gap-2 mb-4">
+            <Layers className="h-4 w-4 text-secondary" />
+            <h2 className="font-display text-lg font-semibold">Tech Stack</h2>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <SpecCell label="Model" value={typedAgent.llm_model} />
+            <SpecCell label="Provider" value={typedAgent.llm_provider ? (LLM_PROVIDER_LABELS[typedAgent.llm_provider] || typedAgent.llm_provider) : null} />
+            <SpecCell label="Framework" value={typedAgent.framework} />
+            <SpecCell label="Version" value={typedAgent.version} />
+            <SpecCell label="Hosted On" value={typedAgent.hosted_on} />
+            <SpecCell label="Autonomy" value={typedAgent.autonomy_level ? (AUTONOMY_LABELS[typedAgent.autonomy_level]) : null} />
+          </div>
+
+          {/* Languages */}
+          {typedAgent.languages && typedAgent.languages.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-[var(--border)]">
+              <p className="text-xs text-muted mb-2 flex items-center gap-1.5">
+                <Code2 className="h-3 w-3" />
+                Languages
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {typedAgent.languages.map((lang) => (
+                  <span
+                    key={lang}
+                    className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-accent/[0.06] text-foreground border border-accent/10"
+                  >
+                    {lang}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Feature badges */}
+          <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-[var(--border)]">
+            {typedAgent.supports_function_calling && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-secondary/10 text-secondary border border-secondary/20">
+                <Zap className="h-3 w-3" />
+                Function Calling
+              </span>
+            )}
+            {typedAgent.supports_streaming && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-secondary/10 text-secondary border border-secondary/20">
+                <Zap className="h-3 w-3" />
+                Streaming
+              </span>
+            )}
+            {!typedAgent.supports_function_calling && !typedAgent.supports_streaming && (
+              <span className="text-xs text-muted/50">No feature flags set</span>
+            )}
+          </div>
+        </section>
+
+        {/* Performance */}
+        <section className="card-glow p-6 rounded-md bg-surface border border-[var(--border)]">
+          <div className="flex items-center gap-2 mb-4">
+            <Gauge className="h-4 w-4 text-accent" />
+            <h2 className="font-display text-lg font-semibold">Performance</h2>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <SpecCell
+              label="Context Window"
+              value={typedAgent.context_window
+                ? typedAgent.context_window >= 1000000
+                  ? `${(typedAgent.context_window / 1000000).toFixed(1)}M tokens`
+                  : `${Math.round(typedAgent.context_window / 1000)}k tokens`
+                : null}
+            />
+            <SpecCell
+              label="Max Output"
+              value={typedAgent.max_output_tokens
+                ? typedAgent.max_output_tokens >= 1000000
+                  ? `${(typedAgent.max_output_tokens / 1000000).toFixed(1)}M tokens`
+                  : `${Math.round(typedAgent.max_output_tokens / 1000)}k tokens`
+                : null}
+            />
+            <SpecCell
+              label="Speed"
+              value={typedAgent.tokens_per_second ? `${typedAgent.tokens_per_second} tok/s` : null}
+            />
+            <SpecCell
+              label="Latency"
+              value={typedAgent.latency_ms ? `${typedAgent.latency_ms}ms` : null}
+            />
+            <SpecCell
+              label="Uptime"
+              value={typedAgent.uptime_pct != null ? `${typedAgent.uptime_pct}%` : null}
+            />
+            <SpecCell
+              label="Error Rate"
+              value={typedAgent.avg_error_rate != null ? `${typedAgent.avg_error_rate}%` : null}
+            />
+            <SpecCell
+              label="Input Cost"
+              value={typedAgent.token_cost_input != null ? `$${(typedAgent.token_cost_input / 100).toFixed(2)}/1M` : null}
+            />
+            <SpecCell
+              label="Output Cost"
+              value={typedAgent.token_cost_output != null ? `$${(typedAgent.token_cost_output / 100).toFixed(2)}/1M` : null}
+            />
+            <SpecCell
+              label="Max Concurrent"
+              value={typedAgent.max_concurrent ? `${typedAgent.max_concurrent} tasks` : null}
+            />
+          </div>
+        </section>
+
+        {/* Tools */}
+        {typedAgent.tools && typedAgent.tools.length > 0 && (
           <section className="card-glow p-6 rounded-md bg-surface border border-[var(--border)]">
             <div className="flex items-center gap-2 mb-4">
-              <Cpu className="h-4 w-4 text-secondary" />
-              <h2 className="font-display text-lg font-semibold">Technical Specs</h2>
-              <span className="text-xs text-muted/60 ml-auto">Agent-to-agent evaluation data</span>
+              <Wrench className="h-4 w-4 text-warning" />
+              <h2 className="font-display text-lg font-semibold">Tools</h2>
             </div>
-
-            {/* Spec Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
-              {typedAgent.context_window && (
-                <div className="p-3 rounded-md bg-background border border-[var(--border)]">
-                  <p className="text-xs text-muted mb-0.5">Context Window</p>
-                  <p className="text-sm font-medium font-mono">
-                    {typedAgent.context_window >= 1000000
-                      ? `${(typedAgent.context_window / 1000000).toFixed(1)}M`
-                      : `${Math.round(typedAgent.context_window / 1000)}k`}
-                  </p>
-                </div>
-              )}
-              {typedAgent.max_output_tokens && (
-                <div className="p-3 rounded-md bg-background border border-[var(--border)]">
-                  <p className="text-xs text-muted mb-0.5">Max Output</p>
-                  <p className="text-sm font-medium font-mono">
-                    {typedAgent.max_output_tokens >= 1000000
-                      ? `${(typedAgent.max_output_tokens / 1000000).toFixed(1)}M`
-                      : `${Math.round(typedAgent.max_output_tokens / 1000)}k`}
-                  </p>
-                </div>
-              )}
-              {typedAgent.latency_ms && (
-                <div className="p-3 rounded-md bg-background border border-[var(--border)]">
-                  <p className="text-xs text-muted mb-0.5">Avg Latency</p>
-                  <p className="text-sm font-medium font-mono">{typedAgent.latency_ms}ms</p>
-                </div>
-              )}
-              {typedAgent.token_cost_input != null && (
-                <div className="p-3 rounded-md bg-background border border-[var(--border)]">
-                  <p className="text-xs text-muted mb-0.5">Input Cost</p>
-                  <p className="text-sm font-medium font-mono">${(typedAgent.token_cost_input / 100).toFixed(2)}/1M</p>
-                </div>
-              )}
-              {typedAgent.token_cost_output != null && (
-                <div className="p-3 rounded-md bg-background border border-[var(--border)]">
-                  <p className="text-xs text-muted mb-0.5">Output Cost</p>
-                  <p className="text-sm font-medium font-mono">${(typedAgent.token_cost_output / 100).toFixed(2)}/1M</p>
-                </div>
-              )}
-              {typedAgent.uptime_pct != null && (
-                <div className="p-3 rounded-md bg-background border border-[var(--border)]">
-                  <p className="text-xs text-muted mb-0.5">Uptime</p>
-                  <p className="text-sm font-medium font-mono">{typedAgent.uptime_pct}%</p>
-                </div>
-              )}
-              {typedAgent.autonomy_level && (
-                <div className="p-3 rounded-md bg-background border border-[var(--border)]">
-                  <p className="text-xs text-muted mb-0.5">Autonomy</p>
-                  <p className="text-sm font-medium">{AUTONOMY_LABELS[typedAgent.autonomy_level]}</p>
-                </div>
-              )}
-            </div>
-
-            {/* Feature badges */}
-            <div className="flex flex-wrap gap-2 mb-4">
-              {typedAgent.supports_function_calling && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-secondary/10 text-secondary border border-secondary/20">
-                  <Zap className="h-3 w-3" />
-                  Function Calling
+            <div className="flex flex-wrap gap-2">
+              {typedAgent.tools.map((tool) => (
+                <span
+                  key={tool}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs bg-surface-light text-muted border border-[var(--border)]"
+                >
+                  <Wrench className="h-3 w-3" />
+                  {AGENT_TOOL_LABELS[tool] || tool}
                 </span>
-              )}
-              {typedAgent.supports_streaming && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-secondary/10 text-secondary border border-secondary/20">
-                  <Zap className="h-3 w-3" />
-                  Streaming
-                </span>
-              )}
+              ))}
             </div>
-
-            {/* Tools */}
-            {typedAgent.tools && typedAgent.tools.length > 0 && (
-              <div>
-                <p className="text-xs text-muted mb-2">Tool Capabilities</p>
-                <div className="flex flex-wrap gap-2">
-                  {typedAgent.tools.map((tool) => (
-                    <span
-                      key={tool}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs bg-surface-light text-muted border border-[var(--border)]"
-                    >
-                      <Wrench className="h-3 w-3" />
-                      {AGENT_TOOL_LABELS[tool] || tool}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
           </section>
         )}
 
@@ -546,42 +581,19 @@ export default async function AgentProfilePage({
           <h2 className="font-display text-lg font-semibold mb-4">Links</h2>
           <div className="space-y-3">
             {typedAgent.website && (
-              <a
-                href={typedAgent.website}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-3 text-sm text-muted hover:text-foreground transition-colors group"
-              >
-                <Globe className="h-4 w-4 text-accent shrink-0" />
-                <span className="truncate">{typedAgent.website}</span>
-                <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-              </a>
+              <LinkRow icon={<Globe className="h-4 w-4 text-accent" />} href={typedAgent.website} label={typedAgent.website} />
             )}
-
             {typedAgent.github_url && (
-              <a
-                href={typedAgent.github_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-3 text-sm text-muted hover:text-foreground transition-colors group"
-              >
-                <Github className="h-4 w-4 text-secondary shrink-0" />
-                <span className="truncate">{typedAgent.github_url}</span>
-                <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-              </a>
+              <LinkRow icon={<Github className="h-4 w-4 text-secondary" />} href={typedAgent.github_url} label={typedAgent.github_url} />
+            )}
+            {typedAgent.source_url && (
+              <LinkRow icon={<Code2 className="h-4 w-4 text-secondary" />} href={typedAgent.source_url} label="Source Code" />
+            )}
+            {typedAgent.demo_url && (
+              <LinkRow icon={<Play className="h-4 w-4 text-success" />} href={typedAgent.demo_url} label="Live Demo" />
             )}
 
-            <div className="flex items-center gap-3 text-sm pt-2 border-t border-[var(--border)]">
-              <Bot className="h-4 w-4 text-muted shrink-0" />
-              <span className="text-muted">
-                Built by{' '}
-                <span className="text-foreground font-medium">
-                  {typedAgent.name}
-                </span>
-              </span>
-            </div>
-
-            {!typedAgent.website && !typedAgent.github_url && !typedAgent.builder && (
+            {!typedAgent.website && !typedAgent.github_url && !typedAgent.source_url && !typedAgent.demo_url && (
               <p className="text-sm text-muted/60">No links available</p>
             )}
           </div>
@@ -643,5 +655,31 @@ function StatCard({
       <p className="font-display text-lg font-semibold">{value}</p>
       <p className="text-xs text-muted mt-0.5">{label}</p>
     </div>
+  );
+}
+
+function SpecCell({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div className="p-3 rounded-md bg-background border border-[var(--border)]">
+      <p className="text-xs text-muted mb-0.5">{label}</p>
+      <p className={`text-sm font-medium font-mono ${value ? 'text-foreground' : 'text-muted/30'}`}>
+        {value || '—'}
+      </p>
+    </div>
+  );
+}
+
+function LinkRow({ icon, href, label }: { icon: React.ReactNode; href: string; label: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-center gap-3 text-sm text-muted hover:text-foreground transition-colors group"
+    >
+      <span className="shrink-0">{icon}</span>
+      <span className="truncate">{label}</span>
+      <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+    </a>
   );
 }
