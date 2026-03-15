@@ -342,114 +342,114 @@ export default async function AgentProfilePage({
           </section>
         )}
 
-        {/* Tech Stack */}
-        <section className="card-glow p-6 rounded-md bg-surface border border-[var(--border)]">
-          <div className="flex items-center gap-2 mb-4">
-            <Layers className="h-4 w-4 text-secondary" />
-            <h2 className="font-display text-lg font-semibold">Tech Stack</h2>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <SpecCell label="Model" value={typedAgent.llm_model} />
-            <SpecCell label="Provider" value={typedAgent.llm_provider ? (LLM_PROVIDER_LABELS[typedAgent.llm_provider] || typedAgent.llm_provider) : null} />
-            <SpecCell label="Framework" value={typedAgent.framework} />
-            <SpecCell label="Version" value={typedAgent.version} />
-            <SpecCell label="Hosted On" value={typedAgent.hosted_on} />
-            <SpecCell label="Autonomy" value={typedAgent.autonomy_level ? (AUTONOMY_LABELS[typedAgent.autonomy_level]) : null} />
-          </div>
-
-          {/* Languages */}
-          {typedAgent.languages && typedAgent.languages.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-[var(--border)]">
-              <p className="text-xs text-muted mb-2 flex items-center gap-1.5">
-                <Code2 className="h-3 w-3" />
-                Languages
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {typedAgent.languages.map((lang) => (
-                  <span
-                    key={lang}
-                    className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-accent/[0.06] text-foreground border border-accent/10"
-                  >
-                    {lang}
-                  </span>
-                ))}
-              </div>
+        {/* Tech Stack — only show if at least one field has data */}
+        {(typedAgent.llm_model || typedAgent.framework || typedAgent.version ||
+          typedAgent.hosted_on || typedAgent.autonomy_level ||
+          (typedAgent.languages && typedAgent.languages.length > 0) ||
+          typedAgent.supports_function_calling || typedAgent.supports_streaming) && (
+          <section className="card-glow p-6 rounded-md bg-surface border border-[var(--border)]">
+            <div className="flex items-center gap-2 mb-4">
+              <Layers className="h-4 w-4 text-secondary" />
+              <h2 className="font-display text-lg font-semibold">Tech Stack</h2>
             </div>
-          )}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {typedAgent.llm_model && <SpecCell label="Model" value={typedAgent.llm_model} />}
+              {typedAgent.framework && <SpecCell label="Framework" value={typedAgent.framework} />}
+              {typedAgent.version && <SpecCell label="Version" value={typedAgent.version} />}
+              {typedAgent.hosted_on && <SpecCell label="Hosted On" value={typedAgent.hosted_on} />}
+              {typedAgent.autonomy_level && <SpecCell label="Autonomy" value={AUTONOMY_LABELS[typedAgent.autonomy_level]} />}
+            </div>
 
-          {/* Feature badges */}
-          <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-[var(--border)]">
-            {typedAgent.supports_function_calling && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-secondary/10 text-secondary border border-secondary/20">
-                <Zap className="h-3 w-3" />
-                Function Calling
-              </span>
+            {/* Languages */}
+            {typedAgent.languages && typedAgent.languages.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-[var(--border)]">
+                <p className="text-xs text-muted mb-2 flex items-center gap-1.5">
+                  <Code2 className="h-3 w-3" />
+                  Languages
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {typedAgent.languages.map((lang) => (
+                    <span
+                      key={lang}
+                      className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-accent/[0.06] text-foreground border border-accent/10"
+                    >
+                      {lang}
+                    </span>
+                  ))}
+                </div>
+              </div>
             )}
-            {typedAgent.supports_streaming && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-secondary/10 text-secondary border border-secondary/20">
-                <Zap className="h-3 w-3" />
-                Streaming
-              </span>
-            )}
-            {!typedAgent.supports_function_calling && !typedAgent.supports_streaming && (
-              <span className="text-xs text-muted/50">No feature flags set</span>
-            )}
-          </div>
-        </section>
 
-        {/* Performance */}
-        <section className="card-glow p-6 rounded-md bg-surface border border-[var(--border)]">
-          <div className="flex items-center gap-2 mb-4">
-            <Gauge className="h-4 w-4 text-accent" />
-            <h2 className="font-display text-lg font-semibold">Performance</h2>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <SpecCell
-              label="Context Window"
-              value={typedAgent.context_window
-                ? typedAgent.context_window >= 1000000
-                  ? `${(typedAgent.context_window / 1000000).toFixed(1)}M tokens`
-                  : `${Math.round(typedAgent.context_window / 1000)}k tokens`
-                : null}
-            />
-            <SpecCell
-              label="Max Output"
-              value={typedAgent.max_output_tokens
-                ? typedAgent.max_output_tokens >= 1000000
-                  ? `${(typedAgent.max_output_tokens / 1000000).toFixed(1)}M tokens`
-                  : `${Math.round(typedAgent.max_output_tokens / 1000)}k tokens`
-                : null}
-            />
-            <SpecCell
-              label="Speed"
-              value={typedAgent.tokens_per_second ? `${typedAgent.tokens_per_second} tok/s` : null}
-            />
-            <SpecCell
-              label="Latency"
-              value={typedAgent.latency_ms ? `${typedAgent.latency_ms}ms` : null}
-            />
-            <SpecCell
-              label="Uptime"
-              value={typedAgent.uptime_pct != null ? `${typedAgent.uptime_pct}%` : null}
-            />
-            <SpecCell
-              label="Error Rate"
-              value={typedAgent.avg_error_rate != null ? `${typedAgent.avg_error_rate}%` : null}
-            />
-            <SpecCell
-              label="Input Cost"
-              value={typedAgent.token_cost_input != null ? `$${(typedAgent.token_cost_input / 100).toFixed(2)}/1M` : null}
-            />
-            <SpecCell
-              label="Output Cost"
-              value={typedAgent.token_cost_output != null ? `$${(typedAgent.token_cost_output / 100).toFixed(2)}/1M` : null}
-            />
-            <SpecCell
-              label="Max Concurrent"
-              value={typedAgent.max_concurrent ? `${typedAgent.max_concurrent} tasks` : null}
-            />
-          </div>
-        </section>
+            {/* Feature badges */}
+            {(typedAgent.supports_function_calling || typedAgent.supports_streaming) && (
+              <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-[var(--border)]">
+                {typedAgent.supports_function_calling && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-secondary/10 text-secondary border border-secondary/20">
+                    <Zap className="h-3 w-3" />
+                    Function Calling
+                  </span>
+                )}
+                {typedAgent.supports_streaming && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-secondary/10 text-secondary border border-secondary/20">
+                    <Zap className="h-3 w-3" />
+                    Streaming
+                  </span>
+                )}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Performance — only show if at least one metric has data */}
+        {(typedAgent.context_window || typedAgent.max_output_tokens || typedAgent.tokens_per_second ||
+          typedAgent.latency_ms || typedAgent.uptime_pct != null || typedAgent.avg_error_rate != null ||
+          typedAgent.token_cost_input != null || typedAgent.token_cost_output != null || typedAgent.max_concurrent) && (
+          <section className="card-glow p-6 rounded-md bg-surface border border-[var(--border)]">
+            <div className="flex items-center gap-2 mb-4">
+              <Gauge className="h-4 w-4 text-accent" />
+              <h2 className="font-display text-lg font-semibold">Performance</h2>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {typedAgent.context_window && (
+                <SpecCell
+                  label="Context Window"
+                  value={typedAgent.context_window >= 1000000
+                    ? `${(typedAgent.context_window / 1000000).toFixed(1)}M tokens`
+                    : `${Math.round(typedAgent.context_window / 1000)}k tokens`}
+                />
+              )}
+              {typedAgent.max_output_tokens && (
+                <SpecCell
+                  label="Max Output"
+                  value={typedAgent.max_output_tokens >= 1000000
+                    ? `${(typedAgent.max_output_tokens / 1000000).toFixed(1)}M tokens`
+                    : `${Math.round(typedAgent.max_output_tokens / 1000)}k tokens`}
+                />
+              )}
+              {typedAgent.tokens_per_second && (
+                <SpecCell label="Speed" value={`${typedAgent.tokens_per_second} tok/s`} />
+              )}
+              {typedAgent.latency_ms && (
+                <SpecCell label="Latency" value={`${typedAgent.latency_ms}ms`} />
+              )}
+              {typedAgent.uptime_pct != null && (
+                <SpecCell label="Uptime" value={`${typedAgent.uptime_pct}%`} />
+              )}
+              {typedAgent.avg_error_rate != null && (
+                <SpecCell label="Error Rate" value={`${typedAgent.avg_error_rate}%`} />
+              )}
+              {typedAgent.token_cost_input != null && (
+                <SpecCell label="Input Cost" value={`$${(typedAgent.token_cost_input / 100).toFixed(2)}/1M`} />
+              )}
+              {typedAgent.token_cost_output != null && (
+                <SpecCell label="Output Cost" value={`$${(typedAgent.token_cost_output / 100).toFixed(2)}/1M`} />
+              )}
+              {typedAgent.max_concurrent && (
+                <SpecCell label="Max Concurrent" value={`${typedAgent.max_concurrent} tasks`} />
+              )}
+            </div>
+          </section>
+        )}
 
         {/* Tools */}
         {typedAgent.tools && typedAgent.tools.length > 0 && (
