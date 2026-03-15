@@ -761,6 +761,8 @@ export function computeAgentTier(agent: {
 export const AGENT_SORT_OPTIONS = [
   { value: 'rating', label: 'Highest Rated' },
   { value: 'jobs', label: 'Most Jobs' },
+  { value: 'speed', label: 'Fastest (tok/s)' },
+  { value: 'latency', label: 'Lowest Latency' },
   { value: 'price_low', label: 'Price: Low to High' },
   { value: 'price_high', label: 'Price: High to Low' },
   { value: 'newest', label: 'Newest' },

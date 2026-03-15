@@ -1,13 +1,14 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import {
-  Bot, Star, Search, Briefcase, Zap, CheckCircle, X, Filter, TrendingUp, Award, Crown, Cpu,
+  Bot, Star, Search, Briefcase, Zap, CheckCircle, X, Filter, TrendingUp, Award, Crown,
+  Cpu, Radio, Wrench, Gauge, Shield,
 } from 'lucide-react';
 import type { AgentRegistry, Profile } from '@/types';
 import {
-  LLM_PROVIDERS, LLM_PROVIDER_LABELS, AGENT_CAPABILITIES,
+  LLM_PROVIDERS, LLM_PROVIDER_LABELS,
   AGENT_SORT_OPTIONS, computeAgentTier, AGENT_TIER_LABELS, AGENT_TIER_COLORS,
-  formatCents,
+  AUTONOMY_LABELS, formatCents,
 } from '@/lib/constants';
 
 /* ------------------------------------------------------------------ */
@@ -101,6 +102,11 @@ export default async function AgentMarketplacePage({
     capability?: string | string[];
     provider?: string;
     sort?: string;
+    model?: string;
+    framework?: string;
+    autonomy?: string;
+    streaming?: string;
+    function_calling?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -114,6 +120,11 @@ export default async function AgentMarketplacePage({
     : [];
   const selectedProvider = params.provider || '';
   const sortParam = params.sort || 'rating';
+  const modelFilter = params.model || '';
+  const frameworkFilter = params.framework || '';
+  const autonomyFilter = params.autonomy || '';
+  const streamingFilter = params.streaming === '1';
+  const functionCallingFilter = params.function_calling === '1';
 
   // --- Build query ---
   const supabase = await createClient();
@@ -136,6 +147,35 @@ export default async function AgentMarketplacePage({
     query = query.eq('llm_provider', selectedProvider);
   }
 
+  // Model filter
+  if (modelFilter) {
+    const sanitized = modelFilter.replace(/[%_]/g, '\\$&').replace(/[.,()]/g, '');
+    if (sanitized) {
+      query = query.ilike('llm_model', `%${sanitized}%`);
+    }
+  }
+
+  // Framework filter
+  if (frameworkFilter) {
+    const sanitized = frameworkFilter.replace(/[%_]/g, '\\$&').replace(/[.,()]/g, '');
+    if (sanitized) {
+      query = query.ilike('framework', `%${sanitized}%`);
+    }
+  }
+
+  // Autonomy filter
+  if (autonomyFilter && ['full', 'semi', 'supervised'].includes(autonomyFilter)) {
+    query = query.eq('autonomy_level', autonomyFilter);
+  }
+
+  // Feature filters
+  if (streamingFilter) {
+    query = query.eq('supports_streaming', true);
+  }
+  if (functionCallingFilter) {
+    query = query.eq('supports_function_calling', true);
+  }
+
   // Capability filter (each must be contained)
   for (const cap of selectedCapabilities) {
     query = query.contains('capabilities', [cap]);
@@ -145,6 +185,12 @@ export default async function AgentMarketplacePage({
   switch (sortParam) {
     case 'jobs':
       query = query.order('jobs_completed', { ascending: false });
+      break;
+    case 'speed':
+      query = query.order('tokens_per_second', { ascending: false, nullsFirst: false });
+      break;
+    case 'latency':
+      query = query.order('latency_ms', { ascending: true, nullsFirst: false });
       break;
     case 'price_low':
       query = query.order('pricing_cents', { ascending: true });
@@ -167,7 +213,8 @@ export default async function AgentMarketplacePage({
   const typedAgents = (agents || []) as AgentWithBuilder[];
 
   const hasFilters =
-    searchQuery || selectedCapabilities.length > 0 || selectedProvider;
+    searchQuery || selectedCapabilities.length > 0 || selectedProvider
+    || modelFilter || frameworkFilter || autonomyFilter || streamingFilter || functionCallingFilter;
 
   // For active filter pill display
   const activeFilters: { label: string; removeHref: string }[] = [];
@@ -181,6 +228,36 @@ export default async function AgentMarketplacePage({
     activeFilters.push({
       label: LLM_PROVIDER_LABELS[selectedProvider] || selectedProvider,
       removeHref: removeParam(params, 'provider'),
+    });
+  }
+  if (modelFilter) {
+    activeFilters.push({
+      label: `Model: ${modelFilter}`,
+      removeHref: removeParam(params, 'model'),
+    });
+  }
+  if (frameworkFilter) {
+    activeFilters.push({
+      label: `Framework: ${frameworkFilter}`,
+      removeHref: removeParam(params, 'framework'),
+    });
+  }
+  if (autonomyFilter) {
+    activeFilters.push({
+      label: AUTONOMY_LABELS[autonomyFilter] || autonomyFilter,
+      removeHref: removeParam(params, 'autonomy'),
+    });
+  }
+  if (streamingFilter) {
+    activeFilters.push({
+      label: 'Streaming',
+      removeHref: removeParam(params, 'streaming'),
+    });
+  }
+  if (functionCallingFilter) {
+    activeFilters.push({
+      label: 'Function Calling',
+      removeHref: removeParam(params, 'function_calling'),
     });
   }
   for (const cap of selectedCapabilities) {
@@ -259,6 +336,85 @@ export default async function AgentMarketplacePage({
                     </option>
                   ))}
                 </select>
+              </div>
+
+              {/* Model */}
+              <div>
+                <label htmlFor="agent-model" className="block text-xs font-medium text-muted mb-1.5">
+                  Model
+                </label>
+                <input
+                  id="agent-model"
+                  type="text"
+                  name="model"
+                  defaultValue={modelFilter}
+                  placeholder="e.g. gpt-4o, claude-3.5..."
+                  className="w-full px-3 py-2 text-sm bg-surface border border-[var(--border)] rounded-md text-foreground placeholder:text-muted focus:outline-none focus:border-accent/50 transition-colors font-mono"
+                />
+              </div>
+
+              {/* Framework */}
+              <div>
+                <label htmlFor="agent-framework" className="block text-xs font-medium text-muted mb-1.5">
+                  Framework
+                </label>
+                <input
+                  id="agent-framework"
+                  type="text"
+                  name="framework"
+                  defaultValue={frameworkFilter}
+                  placeholder="e.g. langchain, crewai..."
+                  className="w-full px-3 py-2 text-sm bg-surface border border-[var(--border)] rounded-md text-foreground placeholder:text-muted focus:outline-none focus:border-accent/50 transition-colors font-mono"
+                />
+              </div>
+
+              {/* Autonomy */}
+              <div>
+                <label htmlFor="agent-autonomy" className="block text-xs font-medium text-muted mb-1.5">
+                  Autonomy
+                </label>
+                <select
+                  id="agent-autonomy"
+                  name="autonomy"
+                  defaultValue={autonomyFilter}
+                  className="w-full px-3 py-2 text-sm bg-surface border border-[var(--border)] rounded-md text-foreground focus:outline-none focus:border-accent/50 transition-colors cursor-pointer"
+                >
+                  <option value="">Any</option>
+                  <option value="full">Fully Autonomous</option>
+                  <option value="semi">Semi-Autonomous</option>
+                  <option value="supervised">Supervised</option>
+                </select>
+              </div>
+
+              {/* Features */}
+              <div>
+                <p className="text-xs font-medium text-muted mb-2">Features</p>
+                <div className="space-y-0.5">
+                  <label className="flex items-center gap-2 px-2 py-1 rounded-md text-xs cursor-pointer select-none hover:bg-surface-light transition-colors">
+                    <input
+                      type="checkbox"
+                      name="streaming"
+                      value="1"
+                      defaultChecked={streamingFilter}
+                      className="h-3.5 w-3.5 rounded border-[var(--border)] bg-surface text-accent focus:ring-accent/30 cursor-pointer"
+                    />
+                    <span className={streamingFilter ? 'text-accent' : 'text-foreground'}>
+                      Streaming
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 px-2 py-1 rounded-md text-xs cursor-pointer select-none hover:bg-surface-light transition-colors">
+                    <input
+                      type="checkbox"
+                      name="function_calling"
+                      value="1"
+                      defaultChecked={functionCallingFilter}
+                      className="h-3.5 w-3.5 rounded border-[var(--border)] bg-surface text-accent focus:ring-accent/30 cursor-pointer"
+                    />
+                    <span className={functionCallingFilter ? 'text-accent' : 'text-foreground'}>
+                      Function Calling
+                    </span>
+                  </label>
+                </div>
               </div>
 
               {/* Capabilities */}
@@ -480,23 +636,61 @@ function AgentCard({ agent }: { agent: AgentWithBuilder }) {
         </span>
       </div>
 
-      {/* Row 3: Tech specs mini-row */}
-      {(agent.llm_model || agent.tokens_per_second || agent.framework) && (
-        <div className="flex items-center gap-3 mb-3 text-xs text-muted">
+      {/* Row 3: Tech specs */}
+      <div className="space-y-2 mb-3">
+        {/* Model + Framework line */}
+        <div className="flex items-center gap-2 text-xs text-muted flex-wrap">
           {agent.llm_model && (
-            <span className="flex items-center gap-1 font-mono">
-              <Cpu className="h-3 w-3" />
+            <span className="flex items-center gap-1 font-mono bg-surface-light px-1.5 py-0.5 rounded border border-[var(--border)]">
+              <Cpu className="h-3 w-3 shrink-0" />
               {agent.llm_model}
             </span>
           )}
-          {agent.tokens_per_second && (
-            <span className="font-mono">{agent.tokens_per_second} tok/s</span>
-          )}
-          {agent.framework && !agent.llm_model && (
-            <span>{agent.framework}</span>
+          {agent.framework && (
+            <span className="flex items-center gap-1 font-mono bg-surface-light px-1.5 py-0.5 rounded border border-[var(--border)]">
+              <Wrench className="h-3 w-3 shrink-0" />
+              {agent.framework}
+            </span>
           )}
         </div>
-      )}
+        {/* Speed + Latency + Autonomy line */}
+        {(agent.tokens_per_second || agent.latency_ms || agent.autonomy_level) && (
+          <div className="flex items-center gap-2 text-xs text-muted flex-wrap">
+            {agent.tokens_per_second && (
+              <span className="flex items-center gap-1 font-mono">
+                <Gauge className="h-3 w-3 shrink-0" />
+                {agent.tokens_per_second} tok/s
+              </span>
+            )}
+            {agent.latency_ms && (
+              <span className="font-mono">{agent.latency_ms}ms</span>
+            )}
+            {agent.autonomy_level && (
+              <span className="flex items-center gap-1">
+                <Shield className="h-3 w-3 shrink-0" />
+                {AUTONOMY_LABELS[agent.autonomy_level] || agent.autonomy_level}
+              </span>
+            )}
+          </div>
+        )}
+        {/* Feature badges */}
+        {(agent.supports_streaming || agent.supports_function_calling) && (
+          <div className="flex items-center gap-1.5">
+            {agent.supports_streaming && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-secondary/10 text-secondary border border-secondary/20">
+                <Radio className="h-2.5 w-2.5" />
+                Stream
+              </span>
+            )}
+            {agent.supports_function_calling && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-accent/10 text-accent border border-accent/20">
+                <Zap className="h-2.5 w-2.5" />
+                Functions
+              </span>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Row 4: Capability tags */}
       {capsToShow.length > 0 && (
